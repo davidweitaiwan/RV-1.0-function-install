@@ -125,11 +125,11 @@ int main(int argc, char** argv)
 
     // Variable Definitions
     const static size_t PATH_BUF_SIZE = 256;
-    // FTP urls
-    std::string ftpFuncList = "ftp://61.220.23.239/rv-functions/package-list.txt";
-    std::string ftpInterList = "ftp://61.220.23.239/rv-functions/interface-list.txt";
-    std::string ftpGenStartupScript = "ftp://61.220.23.239/rv-functions/generate-startup.sh";
-    std::string ftpCompileScript = "ftp://61.220.23.239/rv-functions/colcon-build.sh";
+    // RV urls
+    std::string rvFuncList = "https://raw.githubusercontent.com/davidweitaiwan/RV-1.0-function-install/master/scripts/package-list.txt";
+    std::string rvInterfaceList = "https://raw.githubusercontent.com/davidweitaiwan/RV-1.0-function-install/master/scripts/interface-list.txt";
+    std::string rvGenStartupScript = "https://raw.githubusercontent.com/davidweitaiwan/RV-1.0-function-install/master/scripts/generate-startup.sh";
+    std::string rvCompileScript = "https://raw.githubusercontent.com/davidweitaiwan/RV-1.0-function-install/master/scripts/colcon-build.sh";
 
     // Work directory
     MyApp::MirrorPath tmpDir("./.function_install_tmp");
@@ -277,7 +277,7 @@ int main(int argc, char** argv)
                                     {
                                         // Remove startup files
                                         sprintf(buf, "curl -fsSL %s | bash -s -- -d %s -t %s -p %s --password %s --remove", 
-                                            ftpGenStartupScript.c_str(), 
+                                            rvGenStartupScript.c_str(), 
                                             ros2WsDir.path.generic_string().c_str(), 
                                             tmpDir.path.generic_string().c_str(), 
                                             i.repoName.c_str(), 
@@ -324,7 +324,7 @@ int main(int argc, char** argv)
                             {
                                 // Remove startup files
                                 sprintf(buf, "curl -fsSL %s | bash -s -- -d %s -t %s -p %s --password %s --remove", 
-                                    ftpGenStartupScript.c_str(), 
+                                    rvGenStartupScript.c_str(), 
                                     ros2WsDir.path.generic_string().c_str(), 
                                     tmpDir.path.generic_string().c_str(), 
                                     i.repoName.c_str(), 
@@ -370,7 +370,7 @@ int main(int argc, char** argv)
                 std::vector<std::string> repoStrVec;
 
                 // Online interface list check
-                sprintf(cmdBuf, "curl -s %s", ftpInterList.c_str());
+                sprintf(cmdBuf, "curl -fsSL %s", rvInterfaceList.c_str());
                 FILE* fp = popen(cmdBuf, "r");
                 if (fp != NULL)
                 {
@@ -394,7 +394,7 @@ int main(int argc, char** argv)
 
                 // Online module list check
                 repoStrVec.clear();
-                sprintf(cmdBuf, "curl -s %s", ftpFuncList.c_str());
+                sprintf(cmdBuf, "curl -fsSL %s", rvFuncList.c_str());
                 fp = popen(cmdBuf, "r");
                 if (fp != NULL)
                 {
@@ -576,7 +576,7 @@ int main(int argc, char** argv)
                             system(cmdBuf);
                             // Create startup files
                             sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -d %s -t %s -p %s -i %s --password %s %s", 
-                                ftpGenStartupScript.c_str(), 
+                                rvGenStartupScript.c_str(), 
                                 ros2WsDir.path.generic_string().c_str(), 
                                 tmpDir.path.generic_string().c_str(), 
                                 i.repoName.c_str(), 
@@ -594,7 +594,7 @@ int main(int argc, char** argv)
                             system(cmdBuf);
                             // Remove startup files
                             sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -d %s -t %s -p %s --password %s --remove", 
-                                ftpGenStartupScript.c_str(), 
+                                rvGenStartupScript.c_str(), 
                                 ros2WsDir.path.generic_string().c_str(), 
                                 tmpDir.path.generic_string().c_str(), 
                                 i.repoName.c_str(), 
@@ -616,7 +616,7 @@ int main(int argc, char** argv)
 
                         // Start compile
                         sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -d %s", 
-                                ftpCompileScript.c_str(), 
+                                rvCompileScript.c_str(), 
                                 ros2WsDir.path.generic_string().c_str());
                         system(cmdBuf);
 
