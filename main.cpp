@@ -156,7 +156,7 @@ int main(int argc, char** argv)
     std::vector<MyApp::Repo> interVec;
 
     // Launch file path
-    std::filesystem::path launchFilePath = "common.yaml";
+    fs::path launchFilePath = "common.yaml";
     const static size_t LAUNCH_CONTENT_SIZE = 1024 * 128;
     static char launchFile[LAUNCH_CONTENT_SIZE];
     bool launchFileF = false;
@@ -476,7 +476,7 @@ int main(int argc, char** argv)
             if (ImGui::BeginPopupModal("Confirm Changes", NULL, ImGuiWindowFlags_AlwaysAutoResize))
             {
                 /*
-                 * TODO: add common.yaml change only implement. Considered different version of common.yaml file, 
+                 * TODO: add common.yaml change only implementation. Considering different version of common.yaml file, 
                  * keep generic properties if possible.
                  */
 

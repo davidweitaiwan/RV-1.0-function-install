@@ -6,6 +6,23 @@
 
 #include <iostream>
 #include <fstream>
+
+// Ref: https://stackoverflow.com/a/55475023
+#ifndef __has_include
+  static_assert(false, "__has_include not supported");
+#else
+#  if __cplusplus >= 201703L && __has_include(<filesystem>)
+#    include <filesystem>
+     namespace fs = std::filesystem;
+#  elif __has_include(<experimental/filesystem>)
+#    include <experimental/filesystem>
+     namespace fs = std::experimental::filesystem;
+#  elif __has_include(<boost/filesystem.hpp>)
+#    include <boost/filesystem.hpp>
+     namespace fs = boost::filesystem;
+#  endif
+#endif
+
 #include <filesystem>
 
 #include <map>
@@ -28,8 +45,8 @@ namespace MyApp
     static void HelpMarker(const char* desc);
     float ValueMapping(float value, float leftMin, float leftMax, float rightMin, float rightMax);
     void RenderDockerUI();
-    std::filesystem::path GetHomePath();
-    std::vector<MyApp::Repo> ScanLocalPackages(const std::filesystem::path& ros2WsDir);
+    fs::path GetHomePath();
+    std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir);
     bool ReadCommonFile(const char* path, char* outStr, const size_t& outStrSize);
     bool SudoAuthentication(const std::string& pswd);
     bool SetPasswordBox(const std::string& btnName, AUTH& pswd);
@@ -135,10 +152,10 @@ namespace MyApp
 
     struct MirrorPath
     {
-        std::filesystem::path path;
+        fs::path path;
         char c_str[256];
 
-        MirrorPath(const std::filesystem::path& _path)
+        MirrorPath(const fs::path& _path)
         {
             path = _path;
             strcpy(c_str, path.generic_string().c_str());

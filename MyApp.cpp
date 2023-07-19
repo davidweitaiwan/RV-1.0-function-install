@@ -85,7 +85,7 @@ namespace MyApp
         ImGui::End();
     }
 
-    std::filesystem::path GetHomePath()
+    fs::path GetHomePath()
     {
         const static uint16_t BUFF_SIZE = 256;
         char buf[BUFF_SIZE];
@@ -103,7 +103,7 @@ namespace MyApp
         return retStr;
     }
 
-    std::vector<MyApp::Repo> ScanLocalPackages(const std::filesystem::path& ros2WsDir)
+    std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir)
     {
         const static uint16_t BUFF_SIZE = 256;
         char buf[BUFF_SIZE];
