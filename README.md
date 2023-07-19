@@ -2,20 +2,56 @@
 
 ###### tags: `Robot Vehicle`
 
-*`Updated: 2023/07/16`*
+*`Updated: 2023/07/19`*
 
-## Quick Installation
-The robot vehicle functions can be easily installed by following two method:
-1. **Run `curl`**
-```
-curl -fsSL https://raw.githubusercontent.com/davidweitaiwan/RV-1.0-function-install/master/scripts/get-function-install.sh | bash
-```
-The GUI installer will be generated at `$HOME/rv-function-install`
+## Quick Installation (Only for Ubuntu 22.04 x64)
+The prebuild function installer can be easily installed by following two method:
+1. **Run `curl` to Execute Script**
+    ```bash
+    curl -fsSL ftp://61.220.23.239/rv-10/function-install/install.sh | bash
+    ```
 2. **Run `get-function-install.sh` Manually**
-```
-. get-function-install.sh
-```
+    ```bash
+    . get-function-install.sh
+    ```
 The GUI installer will be generated at `$HOME/rv-function-install`
+
+## Build
+:::warning
+The following method only tested under Ubuntu 20.04 and Ubuntu 22.04 based-on x64 and aarch64 platform.
+:::
+
+### Get Repo
+1. Clone repo
+```bash
+git clone https://github.com/davidweitaiwan/RV-1.0-function-install.git rv-function-install
+```
+2. Get into the dorectory
+```bash
+cd rv-function-install
+```
+
+### g++ build
+- **For Ubuntu 22.04 x64 System**
+    ```bash
+    # Build (using g++-11 compiler)
+    g++ -std=c++17 *.cpp -o function-install -lGL -lglfw
+    ```
+- **For Ubuntu 20.04 aarch64 System**
+    ```bash
+    # Build (using g++-9 compiler)
+    g++ -std=c++17 *.cpp -o function-install -lGL -lglfw -ldl
+    ```
+- **For Ubuntu 18.04 aarch64 System (Issue)**
+    ```bash
+    # Build (using g++-7 compiler)
+    g++ -std=c++17 *.cpp -o function-install -lGL -lglfw -ldl -lstdc++fs
+    ```
+
+### Allow Executing
+```bash
+sudo chmod a+x function-install
+```
 
 ## Usage
 Double click `function-install` or run with command `./function-install` (recommended) to open GUI installer. Under the GUI, the window separated as two main part, the right part work as the package manager, and the left part is the configure file setting area.
