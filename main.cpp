@@ -126,10 +126,10 @@ int main(int argc, char** argv)
     // Variable Definitions
     const static size_t PATH_BUF_SIZE = 256;
     // RV urls
-    std::string rvFuncList = "https://raw.githubusercontent.com/davidweitaiwan/RV-1.0-function-install/master/scripts/package-list.txt";
-    std::string rvInterfaceList = "https://raw.githubusercontent.com/davidweitaiwan/RV-1.0-function-install/master/scripts/interface-list.txt";
-    std::string rvGenStartupScript = "https://raw.githubusercontent.com/davidweitaiwan/RV-1.0-function-install/master/scripts/generate-startup.sh";
-    std::string rvCompileScript = "https://raw.githubusercontent.com/davidweitaiwan/RV-1.0-function-install/master/scripts/colcon-build.sh";
+    std::string rvFuncList = "ftp://61.220.23.239/rv-10/function-install/scripts/package-list.txt";
+    std::string rvInterfaceList = "ftp://61.220.23.239/rv-10/function-install/scripts/interface-list.txt";
+    std::string rvGenStartupScript = "ftp://61.220.23.239/rv-10/function-install/scripts/generate-startup.sh";
+    std::string rvCompileScript = "ftp://61.220.23.239/rv-10/function-install/scripts/colcon-build.sh";
 
     // Work directory
     MyApp::MirrorPath tmpDir("./.function_install_tmp");
@@ -146,6 +146,7 @@ int main(int argc, char** argv)
     std::vector<std::pair<MyApp::Repo, MyApp::ModSign> > deprecRepoVec;// {repo, installF}
     std::vector<MyApp::Repo> installRepoVec;
     std::vector<MyApp::Repo> removeRepoVec;
+    std::vector<MyApp::Repo> noChangeRepoVec;
 
     // Color definitions
     ImVec4 repoColorNoChange(1, 1, 1, 1);
@@ -361,112 +362,153 @@ int main(int argc, char** argv)
 
             if (ImGui::Button("Scan"))// TODO: functionalize. Add non-ROS2 function installation.
             {
-                interVec.clear();
-                repoVec.clear();
-
-                char buf[PATH_BUF_SIZE];
-                char cmdBuf[PATH_BUF_SIZE];
-                
-                std::vector<std::string> repoStrVec;
-
-                // Online interface list check
-                sprintf(cmdBuf, "curl -fsSL %s", rvInterfaceList.c_str());
-                FILE* fp = popen(cmdBuf, "r");
-                if (fp != NULL)
+                if (localAuth.isConfirmed)
                 {
-                    while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
+                    interVec.clear();
+                    repoVec.clear();
+                    deprecRepoVec.clear();
+
+                    char buf[PATH_BUF_SIZE];
+                    char cmdBuf[PATH_BUF_SIZE];
+                    
+                    std::vector<std::string> repoStrVec;
+
+                    // Online interface list check
+                    sprintf(cmdBuf, "curl -fsSL %s", rvInterfaceList.c_str());
+                    FILE* fp = popen(cmdBuf, "r");
+                    if (fp != NULL)
                     {
-                        std::string recvStr(buf);
-                        recvStr = recvStr.substr(recvStr.find('^') + 1, recvStr.find('!') - 1);// @Vehicle Interfaces@vehicle_interfaces@https://github.com/.../RV-1.0-vehicle_interfaces.git!
-                        if (recvStr.length() > 0)
-                            repoStrVec.emplace_back(recvStr);
-                    }
-                    pclose(fp);
-                }
-                
-                for (const auto& i : repoStrVec)// interface-list
-                {
-                    auto splitStr = MyApp::split(i, "@");
-                    if (splitStr.size() != 3)
-                        continue;
-                    interVec.emplace_back(splitStr[0], splitStr[1], splitStr[2]);
-                }
-
-                // Online module list check
-                repoStrVec.clear();
-                sprintf(cmdBuf, "curl -fsSL %s", rvFuncList.c_str());
-                fp = popen(cmdBuf, "r");
-                if (fp != NULL)
-                {
-                    while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
-                    {
-                        std::string recvStr(buf);
-                        recvStr = recvStr.substr(recvStr.find('^') + 1, recvStr.find('!') - 1);// @Data Server@cpp_dataserver@https://github.com/.../RV-1.0-data_server.git!
-                        if (recvStr.length() > 0)
-                            repoStrVec.emplace_back(recvStr);
-                    }
-                    pclose(fp);
-                }
-                
-                for (const auto& i : repoStrVec)// package-list
-                {
-                    auto splitStr = MyApp::split(i, "@");
-                    if (splitStr.size() != 3)
-                        continue;
-                    repoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[1], splitStr[2]}, {false, false}}));
-                }
-
-                // Local module installation status
-                repoStrVec.clear();
-                fp = fopen((ros2WsDir.path / ".modulesettings").generic_string().c_str(), "r");
-                if (fp != NULL)
-                {
-                    while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
-                    {
-                        std::string recvStr(buf);
-                        recvStr = recvStr.substr(recvStr.find('#') + 1, recvStr.find('!') - 1);// #cpp_dataserver:eth2:dhcp:true!
-                        if (recvStr.length() > 0)
-                            repoStrVec.emplace_back(recvStr);
-                    }
-                    fclose(fp);
-                }
-
-                deprecRepoVec.clear();  
-                for (const auto& i : repoStrVec)// .modulesettings
-                {
-                    auto splitStr = MyApp::split(i, ":");
-                    if (splitStr.size() != 4)// cpp_dataserver:eth2:dhcp:true
-                        continue;
-                    bool deprecatedF = true;
-                    MyApp::RepoProp prop(splitStr[1], splitStr[2], (splitStr[3] == "true" ? true : false));
-                    for (auto& j : repoVec)
-                        if (j.first.repoName == splitStr[0])
+                        while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
                         {
-                            j.first.prop = prop;
-                            j.second = {true, true};
-                            deprecatedF = false;
-                            break;
+                            std::string recvStr(buf);
+                            recvStr = recvStr.substr(recvStr.find('^') + 1, recvStr.find('!') - 1);// ^Vehicle Interfaces@vehicle_interfaces@https://github.com/.../RV-1.0-vehicle_interfaces.git!
+                            if (recvStr.length() > 0)
+                                repoStrVec.emplace_back(recvStr);
                         }
-                    if (deprecatedF)
-                        deprecRepoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[0], "", prop}, {true, true}}));
+                        pclose(fp);
+                    }
+                    
+                    for (const auto& i : repoStrVec)// interface-list
+                    {
+                        auto splitStr = MyApp::split(i, "@");
+                        if (splitStr.size() != 3)
+                            continue;
+                        interVec.emplace_back(splitStr[0], splitStr[1], splitStr[2]);
+                        MyApp::UpdateRepoBranch(interVec.back(), localAuth);
+                    }
+
+                    // Online module list check
+                    repoStrVec.clear();
+                    sprintf(cmdBuf, "curl -fsSL %s", rvFuncList.c_str());
+                    fp = popen(cmdBuf, "r");
+                    if (fp != NULL)
+                    {
+                        while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
+                        {
+                            std::string recvStr(buf);
+                            recvStr = recvStr.substr(recvStr.find('^') + 1, recvStr.find('!') - 1);// ^Data Server@cpp_dataserver@https://github.com/.../RV-1.0-data_server.git!
+                            if (recvStr.length() > 0)
+                                repoStrVec.emplace_back(recvStr);
+                        }
+                        pclose(fp);
+                    }
+                    
+                    for (const auto& i : repoStrVec)// package-list
+                    {
+                        auto splitStr = MyApp::split(i, "@");
+                        if (splitStr.size() != 3)
+                            continue;
+                        repoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[1], splitStr[2]}, {false, false}}));
+                        MyApp::UpdateRepoBranch(repoVec.back().first, localAuth);
+                    }
+
+                    // Local module installation status
+                    repoStrVec.clear();
+                    fp = fopen((ros2WsDir.path / ".modulesettings").generic_string().c_str(), "r");
+                    if (fp != NULL)
+                    {
+                        while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
+                        {
+                            std::string recvStr(buf);
+                            recvStr = recvStr.substr(recvStr.find('#') + 1, recvStr.find('!') - 1);// #cpp_dataserver:master:eth2:dhcp:true!
+                            if (recvStr.length() > 0)
+                                repoStrVec.emplace_back(recvStr);
+                        }
+                        fclose(fp);
+                    }
+
+                    for (const auto& i : repoStrVec)// .modulesettings
+                    {
+                        auto splitStr = MyApp::split(i, ":");
+                        if (splitStr.size() != 5)// cpp_dataserver:master:eth2:dhcp:true
+                            continue;
+                        bool deprecatedF = true;
+                        MyApp::RepoNetworkProp prop(splitStr[2], splitStr[3], (splitStr[4] == "true" ? true : false));
+                        for (auto& [repo, modSign] : repoVec)
+                            if (repo.repoName == splitStr[0])
+                            {
+                                repo.prop = prop;
+                                repo.repoBranch = splitStr[1];
+                                // Check branch deprecated
+                                bool isDeprecF = true;
+                                for (int bIdx = 0; bIdx < repo.repoBranchVec.size(); bIdx++)
+                                    if (repo.repoBranchVec[bIdx] == repo.repoBranch)
+                                    {
+                                        repo.repoBranchIdx = bIdx;
+                                        isDeprecF = false;
+                                        break;
+                                    }
+                                if (isDeprecF)
+                                {
+                                    repo.repoBranch += " (deprecated)";
+                                    repo.repoBranchVec.push_back(repo.repoBranch);
+                                    repo.repoBranchIdx = repo.repoBranchVec.size() - 1;
+                                    repo.repoBranchDeprecIdx = repo.repoBranchIdx;
+                                }
+                                modSign = {true, true};
+                                deprecatedF = false;
+                                break;
+                            }
+                        if (deprecatedF)
+                        {
+                            deprecRepoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[0], "", prop}, {true, true}}));
+                            deprecRepoVec.back().first.repoBranch = splitStr[1];
+                        }
+                    }
+                    launchCmdStateStr.info("Repo list updated!");
                 }
-                launchCmdStateStr.info("Repo list updated!");
+                else
+                    launchCmdStateStr.err("Authentication Failed.");
             }// Scan button
 
             ImGui::SameLine();
             if (ImGui::Button("Install/Remove"))
             {
-                installRepoVec.clear();
-                removeRepoVec.clear();
-                for (const auto& i : repoVec)
-                    if (i.second.second)
-                        installRepoVec.emplace_back(i.first);
-                    else if (i.second.first != i.second.second)
-                        removeRepoVec.emplace_back(i.first);
-                for (const auto& i : deprecRepoVec)
-                    if (!i.second.second)
-                        removeRepoVec.emplace_back(i.first);
-                ImGui::OpenPopup("Confirm Changes");
+                // Authentication
+                if (localAuth.isConfirmed)
+                {
+                    installRepoVec.clear();
+                    removeRepoVec.clear();
+                    noChangeRepoVec.clear();
+                    for (const auto& [repo, modSign] : repoVec)
+                        if (modSign.second)
+                        {
+                            if (repo.repoBranchDeprecIdx < 0)
+                                installRepoVec.emplace_back(repo);
+                            else
+                                noChangeRepoVec.emplace_back(repo);
+                        }
+                        else if (modSign.first != modSign.second)
+                            removeRepoVec.emplace_back(repo);
+                    for (const auto& [repo, modSign] : deprecRepoVec)
+                        if (!modSign.second)
+                            removeRepoVec.emplace_back(repo);
+                        else
+                            noChangeRepoVec.emplace_back(repo);
+                    ImGui::OpenPopup("Confirm Changes");
+                }
+                else
+                    launchCmdStateStr.err("Authentication Failed.");
             }// Install/Remove button
                 
 
@@ -507,19 +549,27 @@ int main(int argc, char** argv)
                 }
                 ImGui::SeparatorText("Install");
                 ImGui::PushFont(&contentFont);
-                for (auto& i : installRepoVec)
+                if (ImGui::BeginTable("installList", 2))
                 {
-                    ImGui::TextColored(repoColorInstall, i.repoDescribe.c_str());
-                    if (ImGui::IsItemHovered() && ImGui::BeginTooltip())
+                    for (auto& i : installRepoVec)
                     {
-
-                        ImGui::Text("Interface: %s", i.prop.interface.c_str());
-                        ImGui::Text("IP: %s", i.prop.ip.c_str());
-                        ImGui::Text("Internet: %s", i.prop.internetRequired ? "yes" : "no");
-                        ImGui::EndTooltip();
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(repoColorInstall, i.repoDescribe.c_str());
+                        if (ImGui::IsItemHovered() && ImGui::BeginTooltip())
+                        {
+                            ImGui::Text("Interface: %s", i.prop.interface.c_str());
+                            ImGui::Text("IP: %s", i.prop.ip.c_str());
+                            ImGui::Text("Internet: %s", i.prop.internetRequired ? "yes" : "no");
+                            ImGui::EndTooltip();
+                        }
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(repoColorInstall, ("[" + i.repoBranch + "]").c_str());
                     }
+                    ImGui::EndTable();
                 }
                 ImGui::PopFont();
+
                 // Remove repo list
                 ImGui::SeparatorText("Remove");
                 ImGui::PushFont(&contentFont);
@@ -528,7 +578,6 @@ int main(int argc, char** argv)
                     ImGui::TextColored(repoColorRemove, i.repoDescribe.c_str());
                     if (ImGui::IsItemHovered() && ImGui::BeginTooltip())
                     {
-
                         ImGui::Text("Interface: %s", i.prop.interface.c_str());
                         ImGui::Text("IP: %s", i.prop.ip.c_str());
                         ImGui::Text("Internet: %s", i.prop.internetRequired ? "yes" : "no");
@@ -536,12 +585,40 @@ int main(int argc, char** argv)
                     }
                 }
                 ImGui::PopFont();
+
                 // Interface list
                 ImGui::SeparatorText("Interfaces");
                 ImGui::PushFont(&contentFont);
-                for (auto& i : interVec)
-                    ImGui::TextColored(repoColorInstall, i.repoDescribe.c_str());
+                if (ImGui::BeginTable("interfaceList", 2))
+                {
+                    for (auto& i : interVec)
+                    {
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(repoColorInstall, i.repoDescribe.c_str());
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(repoColorInstall, ("[" + i.repoBranch + "]").c_str());
+                    }
+                    ImGui::EndTable();
+                }
                 ImGui::PopFont();
+
+                // Remove repo list
+                ImGui::SeparatorText("No Changes");
+                ImGui::PushFont(&contentFont);
+                for (auto& i : noChangeRepoVec)
+                {
+                    ImGui::TextColored(repoColorNoChange, i.repoDescribe.c_str());
+                    if (ImGui::IsItemHovered() && ImGui::BeginTooltip())
+                    {
+                        ImGui::Text("Interface: %s", i.prop.interface.c_str());
+                        ImGui::Text("IP: %s", i.prop.ip.c_str());
+                        ImGui::Text("Internet: %s", i.prop.internetRequired ? "yes" : "no");
+                        ImGui::EndTooltip();
+                    }
+                }
+                ImGui::PopFont();
+
                 // Button area
                 ImGui::Separator();
                 if (ImGui::Button("OK", ImVec2(150, 0)))
@@ -566,7 +643,7 @@ int main(int argc, char** argv)
                             std::string tmpRepoPath = (tmpDir.path / i.repoName).generic_string();
                             std::string wsRepoPath = (ros2SrcDir.path / i.repoName).generic_string();
                             // Clone latest repo
-                            sprintf(cmdBuf, "git clone %s %s", i.repoUrl.c_str(), tmpRepoPath.c_str());
+                            sprintf(cmdBuf, "git clone %s -b %s %s", i.repoUrl.c_str(), i.repoBranch.c_str(), tmpRepoPath.c_str());
                             system(cmdBuf);
                             // Remove current repo
                             sprintf(cmdBuf, "rm -rf %s", wsRepoPath.c_str());
@@ -606,7 +683,7 @@ int main(int argc, char** argv)
                         {
                             std::string tmpInterfacePath = (tmpDir.path / i.repoName).generic_string();
                             std::string wsInterfacePath = (ros2SrcDir.path / i.repoName).generic_string();
-                            sprintf(cmdBuf, "git clone %s %s", i.repoUrl.c_str(), tmpInterfacePath.c_str());
+                            sprintf(cmdBuf, "git clone %s -b %s %s", i.repoUrl.c_str(), i.repoBranch.c_str(), tmpInterfacePath.c_str());
                             system(cmdBuf);
                             sprintf(cmdBuf, "rm -rf %s", wsInterfacePath.c_str());
                             system(cmdBuf);
@@ -626,8 +703,9 @@ int main(int argc, char** argv)
                         {
                             for (const auto& i : installRepoVec)
                             {
-                                fprintf(fp, "#%s:%s:%s:%s!\n", 
+                                fprintf(fp, "#%s:%s:%s:%s:%s!\n", 
                                     i.repoName.c_str(), 
+                                    i.repoBranch.c_str(), 
                                     i.prop.interface.c_str(), 
                                     i.prop.ip.c_str(), 
                                     i.prop.internetRequired ? "true" : "false");
@@ -655,11 +733,14 @@ int main(int argc, char** argv)
                 ImFont labelFont = *ImGui::GetFont();
                 // Active Function check-boxes
                 ImGui::SeparatorText("Active Functions");
-                if (ImGui::BeginTable("activeFunc", 2))
+                if (ImGui::BeginTable("activeFunc", 3))
                 {
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
                     ImGui::TextColored(style.Colors[ImGuiCol_ButtonHovered], "Packages");
+                    ImGui::Separator();
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(style.Colors[ImGuiCol_ButtonHovered], "Branch");
                     ImGui::Separator();
                     ImGui::TableNextColumn();
                     ImGui::TextColored(style.Colors[ImGuiCol_ButtonHovered], "Install/Remove");
@@ -671,7 +752,8 @@ int main(int argc, char** argv)
                         ImGui::PushFont(&contentFont);
                         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10);
                         ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
+
+                        ImGui::TableNextColumn();// Packages
 
                         if (!i.second.first)
                             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 1, 0, 1));
@@ -687,13 +769,13 @@ int main(int argc, char** argv)
                         if (!i.second.first)
                             ImGui::PopStyleColor();
                         
-                        if (ImGui::BeginPopupContextItem("##"))
+                        if (ImGui::BeginPopupContextItem("##activeFuncPopup"))
                         {
                             ImGui::Text("%s Network Setting", i.first.repoDescribe.c_str());
 
                             ImGui::BeginGroup();
                             ImGui::BeginGroup();
-                            ImGui::Text("Interface: ");
+                            ImGui::Text("Interface: ");// TODO: Search interfaces and add into combo
                             ImGui::Text("IP: ");
                             ImGui::EndGroup();
 
@@ -715,8 +797,12 @@ int main(int argc, char** argv)
 
                             ImGui::EndPopup();
                         }
-                        ImGui::TableNextColumn();
-                        ImGui::Checkbox("##", &i.second.second);
+                        ImGui::TableNextColumn();// Branch
+                        ImGui::Combo("##activeFuncCombo", &i.first.repoBranchIdx, MyApp::StrVecToCStrArr(i.first.repoBranchVec), i.first.repoBranchVec.size());
+                        i.first.repoBranch = i.first.repoBranchVec[i.first.repoBranchIdx];
+
+                        ImGui::TableNextColumn();// Install/Remove
+                        ImGui::Checkbox("##activeFuncCheckbox", &i.second.second);
                         ImGui::PopStyleVar();
                         ImGui::PopFont();
                         ImGui::PopID();
@@ -727,11 +813,14 @@ int main(int argc, char** argv)
 
                 // Deprecated Function check-boxes
                 ImGui::SeparatorText("Deprecated Functions");
-                if (ImGui::BeginTable("deprecatedFunc", 2))
+                if (ImGui::BeginTable("deprecatedFunc", 3))
                 {
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
                     ImGui::TextColored(style.Colors[ImGuiCol_ButtonHovered], "Packages");
+                    ImGui::Separator();
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(style.Colors[ImGuiCol_ButtonHovered], "Branch");
                     ImGui::Separator();
                     ImGui::TableNextColumn();
                     ImGui::TextColored(style.Colors[ImGuiCol_ButtonHovered], "Install/Remove");
@@ -753,7 +842,7 @@ int main(int argc, char** argv)
                             else
                                 launchCmdStateStr.info("common.yaml not found :(");
                         }
-                        if (ImGui::BeginPopupContextItem("##"))
+                        if (ImGui::BeginPopupContextItem("##deprecatedFuncPopup"))
                         {
                             ImGui::Text("Deprecated package cannot be configured");
                             ImGui::BeginDisabled();
@@ -782,7 +871,9 @@ int main(int argc, char** argv)
                             ImGui::EndPopup();
                         }
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox("##", &i.second.second);
+                        ImGui::Text(i.first.repoBranch.c_str());
+                        ImGui::TableNextColumn();
+                        ImGui::Checkbox("##deprecatedFuncCheckbox", &i.second.second);
                         ImGui::PopStyleVar();
                         ImGui::PopFont();
                         ImGui::PopID();
@@ -793,11 +884,14 @@ int main(int argc, char** argv)
 
                 // Interface list
                 ImGui::SeparatorText("Interfaces");
-                if (ImGui::BeginTable("interfaces", 2))
+                if (ImGui::BeginTable("interfaces", 3))
                 {
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
                     ImGui::TextColored(style.Colors[ImGuiCol_ButtonHovered], "Packages");
+                    ImGui::Separator();
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(style.Colors[ImGuiCol_ButtonHovered], "Branch");
                     ImGui::Separator();
                     ImGui::TableNextColumn();
                     ImGui::TextColored(style.Colors[ImGuiCol_ButtonHovered], "Install/Remove");
@@ -818,9 +912,13 @@ int main(int argc, char** argv)
                             ImGui::EndTooltip();
                         }
 
+                        ImGui::TableNextColumn();// Branch
+                        ImGui::Combo("##interfacesCombo", &i.repoBranchIdx, MyApp::StrVecToCStrArr(i.repoBranchVec), i.repoBranchVec.size());
+                        i.repoBranch = i.repoBranchVec[i.repoBranchIdx];
+
                         ImGui::TableNextColumn();
                         ImGui::BeginDisabled();
-                        ImGui::Checkbox("##", &alwaysEnableF);
+                        ImGui::Checkbox("##interfacesCheckbox", &alwaysEnableF);
                         ImGui::EndDisabled();
                         ImGui::PopStyleVar();
                         ImGui::PopFont();

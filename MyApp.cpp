@@ -127,10 +127,34 @@ namespace MyApp
             auto splitStr = MyApp::split(i, ":");
             if (splitStr.size() != 4)// cpp_dataserver:eth2:dhcp:true
                 continue;
-            MyApp::RepoProp prop(splitStr[1], splitStr[2], (splitStr[3] == "true" ? true : false));
+            MyApp::RepoNetworkProp prop(splitStr[1], splitStr[2], (splitStr[3] == "true" ? true : false));
             ret.emplace_back(splitStr[0], splitStr[0], "", prop);
         }
         return ret;
+    }
+
+    void UpdateRepoBranch(Repo& repo, AUTH& auth)
+    {
+        const static uint16_t BUFF_SIZE = 1024;
+        char cmdBuf[BUFF_SIZE];
+        char buf[BUFF_SIZE];
+        std::string scanBrScript = "ftp://61.220.23.239/rv-10/function-install/scripts/scanBranch.sh";
+        sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -u %s --password %s", 
+                scanBrScript.c_str(), 
+                repo.repoUrl.c_str(), 
+                auth.password.c_str());
+        FILE* fp = popen(cmdBuf, "r");
+        if (fp != NULL)
+        {
+            while (fgets(buf, BUFF_SIZE, fp) != NULL)
+            {
+                std::string recvStr(buf);
+                std::string branchStr = recvStr.substr(recvStr.find('^') + 1, recvStr.find('!') - 1);// ^master!
+                if (branchStr.length() > 0 && recvStr != branchStr)
+                    repo.repoBranchVec.push_back(branchStr);
+            }
+            pclose(fp);
+        }
     }
 
     bool ReadCommonFile(const char* path, char* outStr, const size_t& outStrSize)
@@ -177,7 +201,7 @@ namespace MyApp
         return false;
     }
 
-    bool SetPasswordBox(const std::string& btnName, AUTH& pswd)
+    bool SetPasswordBox(const std::string& btnName, AUTH& auth)
     {
         bool successF = false;
         if (ImGui::Button(btnName.c_str()))
@@ -193,8 +217,8 @@ namespace MyApp
                 successF = SudoAuthentication(pswdStr);
                 if (successF)
                 {
-                    pswd.password = pswdStr;
-                    pswd.isConfirmed = successF;
+                    auth.password = pswdStr;
+                    auth.isConfirmed = successF;
                 }
                 ImGui::CloseCurrentPopup();
             }
@@ -235,5 +259,17 @@ namespace MyApp
             }
         }
         return splitStrings;
+    }
+
+    char** StrVecToCStrArr(const std::vector<std::string>& strVec)
+    {
+        char **ret = new char*[strVec.size()];
+        for (int i = 0; i < strVec.size(); i++)
+        {
+            ret[i] = new char[strVec[i].length() + 1];
+            memset(ret[i], 0, strVec[i].length() + 1);
+            memcpy(ret[i], strVec[i].data(), strVec[i].length());
+        }
+        return ret;
     }
 }
