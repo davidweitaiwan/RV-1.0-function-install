@@ -1,6 +1,0 @@
-^Control Server@py_controlserver@https://github.com/davidweitaiwan/RV-1.0-control_server.git!
-^Data Server@cpp_dataserver@https://github.com/davidweitaiwan/RV-1.0-data_server.git!
-^Safety Server@cpp_safetyserver@https://github.com/davidweitaiwan/RV-1.0-safety_server.git!
-^Timesync Server@cpp_timesyncserver@https://github.com/davidweitaiwan/RV-1.0-timesync_server.git!
-
-^Ground Detect@cpp_zeddetect@https://github.com/davidweitaiwan/RV-1.0-algo-grounddetect.git!

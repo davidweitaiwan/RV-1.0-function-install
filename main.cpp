@@ -130,6 +130,7 @@ int main(int argc, char** argv)
     std::string rvInterfaceList = "ftp://61.220.23.239/rv-10/function-install/scripts/interface-list.txt";
     std::string rvGenStartupScript = "ftp://61.220.23.239/rv-10/function-install/scripts/generate-startup.sh";
     std::string rvCompileScript = "ftp://61.220.23.239/rv-10/function-install/scripts/colcon-build.sh";
+    std::string rvScanInterfaceScript = "ftp://61.220.23.239/rv-10/function-install/scripts/scan-interface.sh";
 
     // Work directory
     MyApp::MirrorPath tmpDir("./.function_install_tmp");
@@ -141,6 +142,9 @@ int main(int argc, char** argv)
     MyApp::AUTH ftpAuth;
     MyApp::MirrorPath ftpKeyPath("ftp.key");
 
+    // Local network interface
+    std::vector<std::string> netInterVec;
+
     // Repository vectors
     std::vector<std::pair<MyApp::Repo, MyApp::ModSign> > repoVec;// {repo, installF}
     std::vector<std::pair<MyApp::Repo, MyApp::ModSign> > deprecRepoVec;// {repo, installF}
@@ -148,13 +152,13 @@ int main(int argc, char** argv)
     std::vector<MyApp::Repo> removeRepoVec;
     std::vector<MyApp::Repo> noChangeRepoVec;
 
+    // Interface vectors
+    std::vector<MyApp::Repo> interVec;
+
     // Color definitions
     ImVec4 repoColorNoChange(1, 1, 1, 1);
     ImVec4 repoColorInstall(0, 1, 0, 1);
     ImVec4 repoColorRemove(1, 0, 0, 1);
-
-    // Interface vectors
-    std::vector<MyApp::Repo> interVec;
 
     // Launch file path
     fs::path launchFilePath = "common.yaml";
@@ -163,6 +167,23 @@ int main(int argc, char** argv)
     bool launchFileF = false;
 
     MyApp::ColoredString launchCmdStateStr;
+
+    // Scan network interface
+    {
+        char buf[PATH_BUF_SIZE];
+        char cmdBuf[PATH_BUF_SIZE];
+        sprintf(cmdBuf, "curl -fsSL %s | bash", rvScanInterfaceScript.c_str());
+        FILE* fp = popen(cmdBuf, "r");
+        if (fp != NULL)
+        {
+            while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
+            {
+                netInterVec.emplace_back(buf);
+            }
+            pclose(fp);
+        }
+        netInterVec.push_back("NONE");
+    }
 
     // Main loop
 #ifdef __EMSCRIPTEN__
@@ -195,6 +216,7 @@ int main(int argc, char** argv)
         // My code goes here
         MyApp::RenderDockerUI();
 
+        // Menu bar
         {
             if (ImGui::BeginMainMenuBar())
             {
@@ -268,7 +290,7 @@ int main(int argc, char** argv)
                         {
                             if (fileRemoveF)
                             {
-                                auto vec = MyApp::ScanLocalPackages(ros2WsDir.path);
+                                auto vec = MyApp::ScanLocalPackages(ros2WsDir.path, netInterVec);
                                 if (localAuth.isConfirmed)
                                 {
                                     char buf[PATH_BUF_SIZE];
@@ -319,7 +341,7 @@ int main(int argc, char** argv)
                     {
                         if (localAuth.isConfirmed)
                         {
-                            auto vec = MyApp::ScanLocalPackages(ros2WsDir.path);
+                            auto vec = MyApp::ScanLocalPackages(ros2WsDir.path, netInterVec);
                             char buf[PATH_BUF_SIZE];
                             for (const auto& i : vec)
                             {
@@ -354,7 +376,7 @@ int main(int argc, char** argv)
                 }
                 ImGui::EndMainMenuBar();
             }
-        }
+        }// Menu bar
 
         // Repo Window
         {
@@ -393,7 +415,7 @@ int main(int argc, char** argv)
                         auto splitStr = MyApp::split(i, "@");
                         if (splitStr.size() != 3)
                             continue;
-                        interVec.emplace_back(splitStr[0], splitStr[1], splitStr[2]);
+                        interVec.emplace_back(splitStr[0], splitStr[1], splitStr[2], netInterVec);
                         MyApp::UpdateRepoBranch(interVec.back(), localAuth);
                     }
 
@@ -418,7 +440,7 @@ int main(int argc, char** argv)
                         auto splitStr = MyApp::split(i, "@");
                         if (splitStr.size() != 3)
                             continue;
-                        repoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[1], splitStr[2]}, {false, false}}));
+                        repoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[1], splitStr[2], netInterVec}, {false, false}}));
                         MyApp::UpdateRepoBranch(repoVec.back().first, localAuth);
                     }
 
@@ -443,28 +465,52 @@ int main(int argc, char** argv)
                         if (splitStr.size() != 5)// cpp_dataserver:master:eth2:dhcp:true
                             continue;
                         bool deprecatedF = true;
-                        MyApp::RepoNetworkProp prop(splitStr[2], splitStr[3], (splitStr[4] == "true" ? true : false));
+                        MyApp::RepoNetworkProp prop(splitStr[2], splitStr[3], (splitStr[4] == "true" ? true : false), netInterVec);
+
+                        {
+                            // Check network interface deprecated
+                            bool isDeprecF = true;
+                            for (int niIdx = 0; niIdx < netInterVec.size(); niIdx++)
+                                if (prop.interface == netInterVec[niIdx])
+                                {
+                                    prop.interfaceIdx = niIdx;
+                                    isDeprecF = false;
+                                    break;
+                                }
+                            if (isDeprecF)
+                            {
+                                prop.interface += " (deprecated)";
+                                prop.interfaceVec.push_back(prop.interface);
+                                prop.interfaceIdx = prop.interfaceVec.size() - 1;
+                                prop.interfaceDeprecIdx = prop.interfaceIdx;
+                            }
+                        }
+
                         for (auto& [repo, modSign] : repoVec)
                             if (repo.repoName == splitStr[0])
                             {
                                 repo.prop = prop;
                                 repo.repoBranch = splitStr[1];
-                                // Check branch deprecated
-                                bool isDeprecF = true;
-                                for (int bIdx = 0; bIdx < repo.repoBranchVec.size(); bIdx++)
-                                    if (repo.repoBranchVec[bIdx] == repo.repoBranch)
-                                    {
-                                        repo.repoBranchIdx = bIdx;
-                                        isDeprecF = false;
-                                        break;
-                                    }
-                                if (isDeprecF)
+
                                 {
-                                    repo.repoBranch += " (deprecated)";
-                                    repo.repoBranchVec.push_back(repo.repoBranch);
-                                    repo.repoBranchIdx = repo.repoBranchVec.size() - 1;
-                                    repo.repoBranchDeprecIdx = repo.repoBranchIdx;
+                                    // Check branch deprecated
+                                    bool isDeprecF = true;
+                                    for (int bIdx = 0; bIdx < repo.repoBranchVec.size(); bIdx++)
+                                        if (repo.repoBranch == repo.repoBranchVec[bIdx])
+                                        {
+                                            repo.repoBranchIdx = bIdx;
+                                            isDeprecF = false;
+                                            break;
+                                        }
+                                    if (isDeprecF)
+                                    {
+                                        repo.repoBranch += " (deprecated)";
+                                        repo.repoBranchVec.push_back(repo.repoBranch);
+                                        repo.repoBranchIdx = repo.repoBranchVec.size() - 1;
+                                        repo.repoBranchDeprecIdx = repo.repoBranchIdx;
+                                    }
                                 }
+
                                 modSign = {true, true};
                                 deprecatedF = false;
                                 break;
@@ -493,7 +539,7 @@ int main(int argc, char** argv)
                     for (const auto& [repo, modSign] : repoVec)
                         if (modSign.second)
                         {
-                            if (repo.repoBranchDeprecIdx < 0)
+                            if (repo.repoBranchDeprecIdx < 0 && repo.prop.interfaceDeprecIdx < 0 && repo.prop.interface != "NONE")
                                 installRepoVec.emplace_back(repo);
                             else
                                 noChangeRepoVec.emplace_back(repo);
@@ -517,10 +563,10 @@ int main(int argc, char** argv)
 
             if (ImGui::BeginPopupModal("Confirm Changes", NULL, ImGuiWindowFlags_AlwaysAutoResize))
             {
-                /*
+                /**
                  * TODO: add common.yaml change only implementation. Considering different version of common.yaml file, 
                  * keep generic properties if possible.
-                 */
+                */
 
                 // Install repo list
                 if (ImGui::IsItemHovered() && ImGui::BeginTooltip())
@@ -775,16 +821,18 @@ int main(int argc, char** argv)
 
                             ImGui::BeginGroup();
                             ImGui::BeginGroup();
-                            ImGui::Text("Interface: ");// TODO: Search interfaces and add into combo
+                            ImGui::Text("Interface: ");
                             ImGui::Text("IP: ");
                             ImGui::EndGroup();
 
                             ImGui::SameLine();
                             ImGui::BeginGroup();
-                            static char interfaceStr[64];
-                            strcpy(interfaceStr, i.first.prop.interface.c_str());
-                            ImGui::InputText("##interface", interfaceStr, sizeof(interfaceStr));
-                            i.first.prop.interface = interfaceStr;
+                            ImGui::Combo("##activeInterfaceCombo", &i.first.prop.interfaceIdx, MyApp::StrVecToCStrArr(i.first.prop.interfaceVec), i.first.prop.interfaceVec.size());
+                            i.first.prop.interface = i.first.prop.interfaceVec[i.first.prop.interfaceIdx];
+                            // static char interfaceStr[64];
+                            // strcpy(interfaceStr, i.first.prop.interface.c_str());
+                            // ImGui::InputText("##interface", interfaceStr, sizeof(interfaceStr));
+                            // i.first.prop.interface = interfaceStr;
 
                             static char ipStr[64];
                             strcpy(ipStr, i.first.prop.ip.c_str());
@@ -930,7 +978,7 @@ int main(int argc, char** argv)
             }
 
             ImGui::End();
-        }
+        }// Repo Window
 
         // Launch File Configuration Window
         {
@@ -977,7 +1025,7 @@ int main(int argc, char** argv)
             ImGui::PopFont();
 
             ImGui::End();
-        }
+        }// Launch File Configuration Window
 
         // ImPlot::ShowDemoWindow();
         // ImGui::ShowDemoWindow();

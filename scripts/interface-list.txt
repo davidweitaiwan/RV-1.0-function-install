@@ -1,1 +1,0 @@
-^Vehicle Interfaces@vehicle_interfaces@https://github.com/davidweitaiwan/RV-1.0-vehicle_interfaces.git!

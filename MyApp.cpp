@@ -103,7 +103,7 @@ namespace MyApp
         return retStr;
     }
 
-    std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir)
+    std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir, const std::vector<std::string>& interfaceVec)
     {
         const static uint16_t BUFF_SIZE = 256;
         char buf[BUFF_SIZE];
@@ -114,7 +114,7 @@ namespace MyApp
             while (fgets(buf, BUFF_SIZE, fp) != NULL)
             {
                 std::string recvStr(buf);
-                recvStr = recvStr.substr(recvStr.find('#') + 1, recvStr.find('!') - 1);// #cpp_dataserver:eth2:dhcp:true!
+                recvStr = recvStr.substr(recvStr.find('#') + 1, recvStr.find('!') - 1);// #cpp_dataserver:master:eth2:dhcp:true!
                 if (recvStr.length() > 0)
                     repoStrVec.emplace_back(recvStr);
             }
@@ -125,10 +125,29 @@ namespace MyApp
         for (const auto& i : repoStrVec)// .modulesettings
         {
             auto splitStr = MyApp::split(i, ":");
-            if (splitStr.size() != 4)// cpp_dataserver:eth2:dhcp:true
+            if (splitStr.size() != 5)// cpp_dataserver:master:eth2:dhcp:true
                 continue;
-            MyApp::RepoNetworkProp prop(splitStr[1], splitStr[2], (splitStr[3] == "true" ? true : false));
+            MyApp::RepoNetworkProp prop(splitStr[2], splitStr[3], (splitStr[4] == "true" ? true : false), interfaceVec);
+            {
+                // Check network interface deprecated
+                bool isDeprecF = true;
+                for (int niIdx = 0; niIdx < interfaceVec.size(); niIdx++)
+                    if (prop.interface == interfaceVec[niIdx])
+                    {
+                        prop.interfaceIdx = niIdx;
+                        isDeprecF = false;
+                        break;
+                    }
+                if (isDeprecF)
+                {
+                    prop.interface += " (deprecated)";
+                    prop.interfaceVec.push_back(prop.interface);
+                    prop.interfaceIdx = prop.interfaceVec.size() - 1;
+                    prop.interfaceDeprecIdx = prop.interfaceIdx;
+                }
+            }
             ret.emplace_back(splitStr[0], splitStr[0], "", prop);
+            ret.back().repoBranch = splitStr[1];
         }
         return ret;
     }
@@ -138,7 +157,7 @@ namespace MyApp
         const static uint16_t BUFF_SIZE = 1024;
         char cmdBuf[BUFF_SIZE];
         char buf[BUFF_SIZE];
-        std::string scanBrScript = "ftp://61.220.23.239/rv-10/function-install/scripts/scanBranch.sh";
+        std::string scanBrScript = "ftp://61.220.23.239/rv-10/function-install/scripts/scan-branch.sh";
         sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -u %s --password %s", 
                 scanBrScript.c_str(), 
                 repo.repoUrl.c_str(), 

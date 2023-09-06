@@ -47,7 +47,7 @@ static void HelpMarker(const char* desc);
 float ValueMapping(float value, float leftMin, float leftMax, float rightMin, float rightMax);
 void RenderDockerUI();
 fs::path GetHomePath();
-std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir);
+std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir, const std::vector<std::string>& interfaceVec);
 void UpdateRepoBranch(Repo& repo, AUTH& auth);
 bool ReadCommonFile(const char* path, char* outStr, const size_t& outStrSize);
 bool SudoAuthentication(const std::string& pswd);
@@ -59,36 +59,44 @@ char** StrVecToCStrArr(const std::vector<std::string>& str);
 class RepoNetworkProp
 {
 public:
-    std::string interface;// Default: eth0
+    std::string interface;// Default: NONE
+    std::vector<std::string> interfaceVec;
+    int interfaceIdx;// Default: 0
+    int interfaceDeprecIdx;// Default: -1
     std::string ip;// Default: dhcp
     bool internetRequired;// Default: false; true if module needs internet connection
 
-    RepoNetworkProp() :
-        interface("eth0"), 
+    RepoNetworkProp(const std::vector<std::string>& interfaceVec) :
+        interface("NONE"), 
+        interfaceVec(interfaceVec), 
+        interfaceIdx(0), 
+        interfaceDeprecIdx(-1), 
         ip("dhcp"), 
         internetRequired(false) {}
     
-    RepoNetworkProp(const std::string& interface, const std::string& ip, bool internetRequired) :
+    RepoNetworkProp(const std::string& interface, const std::string& ip, bool internetRequired, const std::vector<std::string>& interfaceVec) :
         interface(interface), 
+        interfaceVec(interfaceVec), 
+        interfaceIdx(0), 
+        interfaceDeprecIdx(-1), 
         ip(ip), 
         internetRequired(internetRequired) {}
     
     RepoNetworkProp(const RepoNetworkProp& prop)
     {
         this->interface = prop.interface;
+        this->interfaceVec = prop.interfaceVec;
+        this->interfaceIdx = prop.interfaceIdx;
+        this->interfaceDeprecIdx = prop.interfaceDeprecIdx;
         this->ip = prop.ip;
         this->internetRequired = prop.internetRequired;
     }
     
     bool operator==(const RepoNetworkProp& item)
     {
-        if (this->interface != item.interface)
-            return false;
-        else if (this->ip != item.ip)
-            return false;
-        else if (this->internetRequired != item.internetRequired)
-            return false;
-        return true;
+        return this->interface == item.interface && 
+                this->ip == item.ip && 
+                this->internetRequired == item.internetRequired;
     }
 };
 
@@ -103,13 +111,14 @@ struct Repo
     int repoBranchDeprecIdx;
     RepoNetworkProp prop;
 
-    Repo(const std::string& des, const std::string& name, const std::string& url) : 
+    Repo(const std::string& des, const std::string& name, const std::string& url, const std::vector<std::string>& interfaceVec) : 
         repoDescribe(des), 
         repoName(name), 
         repoUrl(url), 
         repoBranch("master"), 
         repoBranchIdx(0), 
-        repoBranchDeprecIdx(-1) {}
+        repoBranchDeprecIdx(-1), 
+        prop(interfaceVec) {}
     
     Repo(const std::string& des, const std::string& name, const std::string& url, const RepoNetworkProp& prop) : 
         repoDescribe(des), 
