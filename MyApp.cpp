@@ -152,14 +152,14 @@ namespace MyApp
         return ret;
     }
 
-    void UpdateRepoBranch(Repo& repo, AUTH& auth)
+    void UpdateRepoBranch(Repo& repo, AUTH& auth, const std::string& scriptUrl)
     {
         const static uint16_t BUFF_SIZE = 1024;
         char cmdBuf[BUFF_SIZE];
         char buf[BUFF_SIZE];
-        std::string scanBrScript = "ftp://61.220.23.239/rv-10/function-install/scripts/scan-branch.sh";
+        
         sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -u %s --password %s", 
-                scanBrScript.c_str(), 
+                scriptUrl.c_str(), 
                 repo.repoUrl.c_str(), 
                 auth.password.c_str());
         FILE* fp = popen(cmdBuf, "r");

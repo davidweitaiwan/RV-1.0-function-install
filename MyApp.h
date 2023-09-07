@@ -48,7 +48,7 @@ float ValueMapping(float value, float leftMin, float leftMax, float rightMin, fl
 void RenderDockerUI();
 fs::path GetHomePath();
 std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir, const std::vector<std::string>& interfaceVec);
-void UpdateRepoBranch(Repo& repo, AUTH& auth);
+void UpdateRepoBranch(Repo& repo, AUTH& auth, const std::string& scriptUrl);
 bool ReadCommonFile(const char* path, char* outStr, const size_t& outStrSize);
 bool SudoAuthentication(const std::string& pswd);
 bool SetPasswordBox(const std::string& btnName, AUTH& auth);

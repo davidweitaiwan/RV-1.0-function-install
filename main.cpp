@@ -126,11 +126,12 @@ int main(int argc, char** argv)
     // Variable Definitions
     const static size_t PATH_BUF_SIZE = 256;
     // RV urls
-    std::string rvFuncList = "ftp://61.220.23.239/rv-10/function-install/scripts/package-list.txt";
-    std::string rvInterfaceList = "ftp://61.220.23.239/rv-10/function-install/scripts/interface-list.txt";
-    std::string rvGenStartupScript = "ftp://61.220.23.239/rv-10/function-install/scripts/generate-startup.sh";
-    std::string rvCompileScript = "ftp://61.220.23.239/rv-10/function-install/scripts/colcon-build.sh";
-    std::string rvScanInterfaceScript = "ftp://61.220.23.239/rv-10/function-install/scripts/scan-interface.sh";
+    std::string rvFuncList =            "ftp://61.220.23.239/rv-11/vcu-install/scripts/package-list.txt";
+    std::string rvInterfaceList =       "ftp://61.220.23.239/rv-11/vcu-install/scripts/interface-list.txt";
+    std::string rvGenStartupScript =    "ftp://61.220.23.239/rv-11/vcu-install/scripts/generate-startup.sh";
+    std::string rvCompileScript =       "ftp://61.220.23.239/rv-11/vcu-install/scripts/colcon-build.sh";
+    std::string rvScanBranchScript =    "ftp://61.220.23.239/rv-11/vcu-install/scripts/scan-branch.sh";
+    std::string rvScanInterfaceScript = "ftp://61.220.23.239/rv-11/vcu-install/scripts/scan-interface.sh";
 
     // Work directory
     MyApp::MirrorPath tmpDir("./.function_install_tmp");
@@ -178,7 +179,10 @@ int main(int argc, char** argv)
         {
             while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
             {
-                netInterVec.emplace_back(buf);
+                std::string recvStr(buf);
+                recvStr = recvStr.substr(recvStr.find('^') + 1, recvStr.rfind('!') - 1);// ^eth0!
+                if (recvStr.length() > 0)
+                    netInterVec.emplace_back(recvStr);
             }
             pclose(fp);
         }
@@ -416,7 +420,7 @@ int main(int argc, char** argv)
                         if (splitStr.size() != 3)
                             continue;
                         interVec.emplace_back(splitStr[0], splitStr[1], splitStr[2], netInterVec);
-                        MyApp::UpdateRepoBranch(interVec.back(), localAuth);
+                        MyApp::UpdateRepoBranch(interVec.back(), localAuth, rvScanBranchScript);
                     }
 
                     // Online module list check
@@ -441,7 +445,7 @@ int main(int argc, char** argv)
                         if (splitStr.size() != 3)
                             continue;
                         repoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[1], splitStr[2], netInterVec}, {false, false}}));
-                        MyApp::UpdateRepoBranch(repoVec.back().first, localAuth);
+                        MyApp::UpdateRepoBranch(repoVec.back().first, localAuth, rvScanBranchScript);
                     }
 
                     // Local module installation status
