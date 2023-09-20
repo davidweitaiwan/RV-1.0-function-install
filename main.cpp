@@ -125,18 +125,17 @@ int main(int argc, char** argv)
 
     // Variable Definitions
     const static size_t PATH_BUF_SIZE = 256;
-    // RV urls
-    std::string rvFuncList =            "ftp://61.220.23.239/rv-11/vcu-install/scripts/package-list.txt";
-    std::string rvInterfaceList =       "ftp://61.220.23.239/rv-11/vcu-install/scripts/interface-list.txt";
-    std::string rvGenStartupScript =    "ftp://61.220.23.239/rv-11/vcu-install/scripts/generate-startup.sh";
-    std::string rvCompileScript =       "ftp://61.220.23.239/rv-11/vcu-install/scripts/colcon-build.sh";
-    std::string rvScanBranchScript =    "ftp://61.220.23.239/rv-11/vcu-install/scripts/scan-branch.sh";
-    std::string rvScanInterfaceScript = "ftp://61.220.23.239/rv-11/vcu-install/scripts/scan-interface.sh";
 
+    // Config file
+    std::string rvScriptConfigFile = "script.conf";
+    std::map<std::string, std::string> rvScripts;
+    std::map<std::string, std::string> rvScriptsUrl;
+    
     // Work directory
-    MyApp::MirrorPath tmpDir("./.function_install_tmp");
+    MyApp::MirrorPath tmpDir("./.rv_vcu_install");
     MyApp::MirrorPath ros2WsDir(MyApp::GetHomePath() / "ros2_ws");
     MyApp::MirrorPath ros2SrcDir(ros2WsDir.path / "src");
+    MyApp::MirrorPath scriptDir("rv_scripts");
     
     // Authentication
     MyApp::AUTH localAuth;
@@ -169,20 +168,69 @@ int main(int argc, char** argv)
 
     MyApp::ColoredString launchCmdStateStr;
 
-    // Scan network interface
+    // Get script url
+    {
+        try
+        {
+            nlohmann::json json;
+            json.update(nlohmann::json::parse(std::ifstream(rvScriptConfigFile)));
+            rvScriptsUrl["package-list"] = json["package-list"];
+            rvScriptsUrl["interface-list"] = json["interface-list"];
+            rvScriptsUrl["generate-startup"] = json["generate-startup"];
+            rvScriptsUrl["colcon-build"] = json["colcon-build"];
+            rvScriptsUrl["scan-branch"] = json["scan-branch"];
+            rvScriptsUrl["scan-interface"] = json["scan-interface"];
+        }
+        catch (...)
+        {
+            rvScriptsUrl.clear();
+            printf("Read script configure file error. Put %s under the directory then restart the program.", rvScriptConfigFile.c_str());
+            return 1;
+        }
+    }
+
+    // Download scripts
     {
         char buf[PATH_BUF_SIZE];
         char cmdBuf[PATH_BUF_SIZE];
-        sprintf(cmdBuf, "curl -fsSL %s | bash", rvScanInterfaceScript.c_str());
+        sprintf(cmdBuf, "rm -rf %s && mkdir -p %s", scriptDir.c_str, scriptDir.c_str);
+        system(cmdBuf);
+        for (const auto& [k, url] : rvScriptsUrl)
+        {
+            sprintf(cmdBuf, "wget -qP %s %s", scriptDir.c_str, url.c_str());
+            system(cmdBuf);
+            bool fileExistF = false;
+            for (auto& fp : std::filesystem::directory_iterator(scriptDir.path))
+            {
+                if (fp.path().filename() != k + fp.path().extension().generic_string())
+                    continue;
+                rvScripts[k] = fp.path().generic_string();
+                fileExistF = true;
+                break;
+            }
+            if (!fileExistF)
+            {
+                printf("Missing script/file: %s [%s].", k.c_str(), url.c_str());
+                return 1;
+            }
+        }
+    }
+
+    // Scan network interface
+    {
+        netInterVec.clear();
+        char buf[PATH_BUF_SIZE];
+        char cmdBuf[PATH_BUF_SIZE];
+        sprintf(cmdBuf, ". %s", rvScripts["scan-interface"].c_str());
         FILE* fp = popen(cmdBuf, "r");
         if (fp != NULL)
         {
             while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
             {
                 std::string recvStr(buf);
-                recvStr = recvStr.substr(recvStr.find('^') + 1, recvStr.rfind('!') - 1);// ^eth0!
-                if (recvStr.length() > 0)
-                    netInterVec.emplace_back(recvStr);
+                std::string ifNameStr = recvStr.substr(recvStr.find('^') + 1, recvStr.rfind('!') - 1);// ^eth0!
+                if (ifNameStr.length() > 0 && recvStr != ifNameStr)
+                    netInterVec.emplace_back(ifNameStr);
             }
             pclose(fp);
         }
@@ -191,7 +239,7 @@ int main(int argc, char** argv)
 
     // Main loop
 #ifdef __EMSCRIPTEN__
-    // For an Emscripten build we are disabling file-system access, so let's not attempt to do a fopen() of the imgui.ini file.
+    // For an Emscripten build we are disabling file-system access, so let's not attempt to rvScanInterfaceScriptdo a fopen() of the imgui.ini file.
     // You may manually call LoadIniSettingsFromMemory() to load settings from your own storage.
     io.IniFilename = NULL;
     EMSCRIPTEN_MAINLOOP_BEGIN
@@ -303,8 +351,8 @@ int main(int argc, char** argv)
                                     for (const auto& i : vec)
                                     {
                                         // Remove startup files
-                                        sprintf(buf, "curl -fsSL %s | bash -s -- -d %s -t %s -p %s --password %s --remove", 
-                                            rvGenStartupScript.c_str(), 
+                                        sprintf(buf, "bash %s -d %s -t %s -p %s --password %s --remove", 
+                                            rvScripts["generate-startup"].c_str(), 
                                             ros2WsDir.path.generic_string().c_str(), 
                                             tmpDir.path.generic_string().c_str(), 
                                             i.repoName.c_str(), 
@@ -350,8 +398,8 @@ int main(int argc, char** argv)
                             for (const auto& i : vec)
                             {
                                 // Remove startup files
-                                sprintf(buf, "curl -fsSL %s | bash -s -- -d %s -t %s -p %s --password %s --remove", 
-                                    rvGenStartupScript.c_str(), 
+                                sprintf(buf, ". %s -d %s -t %s -p %s --password %s --remove", 
+                                    rvScripts["generate-startup"].c_str(), 
                                     ros2WsDir.path.generic_string().c_str(), 
                                     tmpDir.path.generic_string().c_str(), 
                                     i.repoName.c_str(), 
@@ -378,6 +426,10 @@ int main(int argc, char** argv)
 
                     ImGui::EndMenu();
                 }
+                if (ImGui::BeginMenu("Update"))
+                {
+                    ImGui::EndMenu();
+                }
                 ImGui::EndMainMenuBar();
             }
         }// Menu bar
@@ -400,16 +452,16 @@ int main(int argc, char** argv)
                     std::vector<std::string> repoStrVec;
 
                     // Online interface list check
-                    sprintf(cmdBuf, "curl -fsSL %s", rvInterfaceList.c_str());
+                    sprintf(cmdBuf, "cat %s", rvScripts["interface-list"].c_str());
                     FILE* fp = popen(cmdBuf, "r");
                     if (fp != NULL)
                     {
                         while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
                         {
                             std::string recvStr(buf);
-                            recvStr = recvStr.substr(recvStr.find('^') + 1, recvStr.find('!') - 1);// ^Vehicle Interfaces@vehicle_interfaces@https://github.com/.../RV-1.0-vehicle_interfaces.git!
-                            if (recvStr.length() > 0)
-                                repoStrVec.emplace_back(recvStr);
+                            std::string repoStr = recvStr.substr(recvStr.find('^') + 1, recvStr.rfind('!') - 1);// ^Vehicle Interfaces@vehicle_interfaces@https://github.com/.../RV-1.0-vehicle_interfaces.git!
+                            if (repoStr.length() > 0 && recvStr != repoStr)
+                                repoStrVec.emplace_back(repoStr);
                         }
                         pclose(fp);
                     }
@@ -420,21 +472,21 @@ int main(int argc, char** argv)
                         if (splitStr.size() != 3)
                             continue;
                         interVec.emplace_back(splitStr[0], splitStr[1], splitStr[2], netInterVec);
-                        MyApp::UpdateRepoBranch(interVec.back(), localAuth, rvScanBranchScript);
+                        MyApp::UpdateRepoBranch(interVec.back(), localAuth, rvScripts["scan-branch"]);
                     }
 
                     // Online module list check
                     repoStrVec.clear();
-                    sprintf(cmdBuf, "curl -fsSL %s", rvFuncList.c_str());
+                    sprintf(cmdBuf, "cat %s", rvScripts["package-list"].c_str());
                     fp = popen(cmdBuf, "r");
                     if (fp != NULL)
                     {
                         while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
                         {
                             std::string recvStr(buf);
-                            recvStr = recvStr.substr(recvStr.find('^') + 1, recvStr.find('!') - 1);// ^Data Server@cpp_dataserver@https://github.com/.../RV-1.0-data_server.git!
-                            if (recvStr.length() > 0)
-                                repoStrVec.emplace_back(recvStr);
+                            std::string repoStr = recvStr.substr(recvStr.find('^') + 1, recvStr.rfind('!') - 1);// ^Data Server@cpp_dataserver@https://github.com/.../RV-1.0-data_server.git!
+                            if (repoStr.length() > 0 && recvStr != repoStr)
+                                repoStrVec.emplace_back(repoStr);
                         }
                         pclose(fp);
                     }
@@ -445,7 +497,7 @@ int main(int argc, char** argv)
                         if (splitStr.size() != 3)
                             continue;
                         repoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[1], splitStr[2], netInterVec}, {false, false}}));
-                        MyApp::UpdateRepoBranch(repoVec.back().first, localAuth, rvScanBranchScript);
+                        MyApp::UpdateRepoBranch(repoVec.back().first, localAuth, rvScripts["scan-branch"]);
                     }
 
                     // Local module installation status
@@ -456,9 +508,9 @@ int main(int argc, char** argv)
                         while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
                         {
                             std::string recvStr(buf);
-                            recvStr = recvStr.substr(recvStr.find('#') + 1, recvStr.find('!') - 1);// #cpp_dataserver:master:eth2:dhcp:true!
-                            if (recvStr.length() > 0)
-                                repoStrVec.emplace_back(recvStr);
+                            std::string repoStr = recvStr.substr(recvStr.find('#') + 1, recvStr.rfind('!') - 1);// #cpp_dataserver:master:eth2:dhcp:true!
+                            if (repoStr.length() > 0 && recvStr != repoStr)
+                                repoStrVec.emplace_back(repoStr);
                         }
                         fclose(fp);
                     }
@@ -702,8 +754,8 @@ int main(int argc, char** argv)
                             sprintf(cmdBuf, "cp -r %s %s", tmpRepoPath.c_str(), wsRepoPath.c_str());
                             system(cmdBuf);
                             // Create startup files
-                            sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -d %s -t %s -p %s -i %s --password %s %s", 
-                                rvGenStartupScript.c_str(), 
+                            sprintf(cmdBuf, "bash %s -d %s -t %s -p %s -i %s --password %s %s", 
+                                rvScripts["generate-startup"].c_str(), 
                                 ros2WsDir.path.generic_string().c_str(), 
                                 tmpDir.path.generic_string().c_str(), 
                                 i.repoName.c_str(), 
@@ -720,8 +772,8 @@ int main(int argc, char** argv)
                             sprintf(cmdBuf, "rm -rf %s", wsRepoPath.c_str());
                             system(cmdBuf);
                             // Remove startup files
-                            sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -d %s -t %s -p %s --password %s --remove", 
-                                rvGenStartupScript.c_str(), 
+                            sprintf(cmdBuf, "bash %s -d %s -t %s -p %s --password %s --remove", 
+                                rvScripts["generate-startup"].c_str(), 
                                 ros2WsDir.path.generic_string().c_str(), 
                                 tmpDir.path.generic_string().c_str(), 
                                 i.repoName.c_str(), 
@@ -742,8 +794,8 @@ int main(int argc, char** argv)
                         }
 
                         // Start compile
-                        sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -d %s", 
-                                rvCompileScript.c_str(), 
+                        sprintf(cmdBuf, "bash %s -d %s", 
+                                rvScripts["colcon-build"].c_str(), 
                                 ros2WsDir.path.generic_string().c_str());
                         system(cmdBuf);
 

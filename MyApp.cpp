@@ -158,7 +158,7 @@ namespace MyApp
         char cmdBuf[BUFF_SIZE];
         char buf[BUFF_SIZE];
         
-        sprintf(cmdBuf, "curl -fsSL %s | bash -s -- -u %s --password %s", 
+        sprintf(cmdBuf, "bash %s -u %s --password %s", 
                 scriptUrl.c_str(), 
                 repo.repoUrl.c_str(), 
                 auth.password.c_str());

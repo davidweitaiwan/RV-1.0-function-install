@@ -34,6 +34,8 @@
 #include <thread>
 #include <chrono>
 
+#include <nlohmann/json.hpp>
+
 #include "imgui.h"
 
 namespace MyApp
