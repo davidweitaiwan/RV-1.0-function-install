@@ -50,11 +50,15 @@ float ValueMapping(float value, float leftMin, float leftMax, float rightMin, fl
 void RenderDockerUI();
 fs::path GetHomePath();
 std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir, const std::vector<std::string>& interfaceVec);
-void UpdateRepoBranch(Repo& repo, AUTH& auth, const std::string& scriptUrl);
+void UpdateRepoBranch(Repo& repo, fs::path tmpDir, const std::string& scriptUrl);
 bool ReadCommonFile(const char* path, char* outStr, const size_t& outStrSize);
+bool ReadScriptConf(const fs::path& rvScriptConfigFile, const fs::path& rvScriptDir, std::map<std::string, std::string>& rvScripts);
+bool ScanIF(const std::string& scriptUrl, std::vector<std::string>& ifVec);
 bool SudoAuthentication(const std::string& pswd);
 bool SetPasswordBox(const std::string& btnName, AUTH& auth);
 std::vector<std::string> split(const std::string& str, const std::string& delimiter);
+
+void RunInstallRemove(fs::path tmpDir, fs::path ros2WsDir, fs::path ros2SrcDir, std::map<std::string, std::string> rvScripts, std::vector<Repo> installRepoVec, std::vector<Repo> removeRepoVec, std::vector<Repo> interVec, AUTH localAuth, bool& endF);
 
 char** StrVecToCStrArr(const std::vector<std::string>& str);
 

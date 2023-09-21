@@ -152,16 +152,17 @@ namespace MyApp
         return ret;
     }
 
-    void UpdateRepoBranch(Repo& repo, AUTH& auth, const std::string& scriptUrl)
+    void UpdateRepoBranch(Repo& repo, fs::path tmpDir, const std::string& scriptUrl)
     {
         const static uint16_t BUFF_SIZE = 1024;
         char cmdBuf[BUFF_SIZE];
         char buf[BUFF_SIZE];
         
-        sprintf(cmdBuf, "bash %s -u %s --password %s", 
+        sprintf(cmdBuf, "bash %s -u %s -t %s -p %s", 
                 scriptUrl.c_str(), 
                 repo.repoUrl.c_str(), 
-                auth.password.c_str());
+                tmpDir.generic_string().c_str(), 
+                repo.repoName.c_str());
         FILE* fp = popen(cmdBuf, "r");
         if (fp != NULL)
         {
@@ -195,6 +196,59 @@ namespace MyApp
         return false;
     }
 
+    bool ReadScriptConf(const fs::path& rvScriptConfigFile, const fs::path& rvScriptDir, std::map<std::string, std::string>& rvScripts)
+    {
+        std::map<std::string, std::string> rvScriptsUrl;
+        // Get script url
+        {
+            try
+            {
+                nlohmann::json json;
+                json.update(nlohmann::json::parse(std::ifstream(rvScriptConfigFile)));
+                rvScriptsUrl["package-list"] = json["package-list"];
+                rvScriptsUrl["interface-list"] = json["interface-list"];
+                rvScriptsUrl["generate-startup"] = json["generate-startup"];
+                rvScriptsUrl["colcon-build"] = json["colcon-build"];
+                rvScriptsUrl["scan-branch"] = json["scan-branch"];
+                rvScriptsUrl["scan-interface"] = json["scan-interface"];
+            }
+            catch (...)
+            {
+                printf("Read script configure file error. Put %s under the directory then restart the program.", rvScriptConfigFile.generic_string().c_str());
+                return false;
+            }
+        }
+
+        // Download scripts
+        {
+            rvScripts.clear();
+            char buf[128];
+            char cmdBuf[128];
+            sprintf(cmdBuf, "rm -rf %s && mkdir -p %s", rvScriptDir.generic_string().c_str(), rvScriptDir.generic_string().c_str());
+            system(cmdBuf);
+            for (const auto& [k, url] : rvScriptsUrl)
+            {
+                sprintf(cmdBuf, "wget -qP %s %s", rvScriptDir.generic_string().c_str(), url.c_str());
+                system(cmdBuf);
+                bool fileExistF = false;
+                for (auto& fp : std::filesystem::directory_iterator(rvScriptDir))
+                {
+                    if (fp.path().filename() != k + fp.path().extension().generic_string())
+                        continue;
+                    rvScripts[k] = fp.path().generic_string();
+                    fileExistF = true;
+                    break;
+                }
+                if (!fileExistF)
+                {
+                    printf("Missing script/file: %s [%s].", k.c_str(), url.c_str());
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     bool SudoAuthentication(const std::string& pswd)
     {
         if (pswd.length() <= 0)
@@ -218,6 +272,28 @@ namespace MyApp
         }
         std::cout << "Program exited abnormally\n";
         return false;
+    }
+
+    bool ScanIF(const std::string& scriptUrl, std::vector<std::string>& ifVec)
+    {
+        ifVec.clear();
+        char buf[128];
+        char cmdBuf[128];
+        sprintf(cmdBuf, ". %s", scriptUrl.c_str());
+        FILE* fp = popen(cmdBuf, "r");
+        if (fp != NULL)
+        {
+            while (fgets(buf, 128, fp) != NULL)
+            {
+                std::string recvStr(buf);
+                std::string ifNameStr = recvStr.substr(recvStr.find('^') + 1, recvStr.rfind('!') - 1);// ^eth0!
+                if (ifNameStr.length() > 0 && recvStr != ifNameStr)
+                    ifVec.emplace_back(ifNameStr);
+            }
+            pclose(fp);
+        }
+        ifVec.push_back("NONE");
+        return true;
     }
 
     bool SetPasswordBox(const std::string& btnName, AUTH& auth)
@@ -278,6 +354,98 @@ namespace MyApp
             }
         }
         return splitStrings;
+    }
+
+    void RunInstallRemove(fs::path tmpDir, fs::path ros2WsDir, fs::path ros2SrcDir, std::map<std::string, std::string> rvScripts, std::vector<Repo> installRepoVec, std::vector<Repo> removeRepoVec, std::vector<Repo> interVec, AUTH localAuth, bool& procF)
+    {
+        procF = true;
+        // Run installation
+        char cmdBuf[1024];
+        printf("Create temporary directories...\n");
+        sprintf(cmdBuf, "rm -rf %s", tmpDir.generic_string().c_str());
+        system(cmdBuf);
+        sprintf(cmdBuf, "mkdir -p %s", tmpDir.generic_string().c_str());
+        system(cmdBuf);
+        printf("Create ROS2 workspace...\n");
+        sprintf(cmdBuf, "mkdir -p %s", ros2SrcDir.generic_string().c_str());
+        system(cmdBuf);
+
+        printf("Update ROS2 workspace package files...\n");
+        for (const auto& i : installRepoVec)
+        {
+            std::string tmpRepoPath = (tmpDir / i.repoName).generic_string();
+            std::string wsRepoPath = (ros2SrcDir / i.repoName).generic_string();
+            // Clone latest repo
+            sprintf(cmdBuf, "git clone %s -b %s %s -q", i.repoUrl.c_str(), i.repoBranch.c_str(), tmpRepoPath.c_str());
+            system(cmdBuf);
+            // Remove current repo
+            sprintf(cmdBuf, "rm -rf %s", wsRepoPath.c_str());
+            system(cmdBuf);
+            // Copy new repo to ROS2 workspace
+            sprintf(cmdBuf, "cp -r %s %s", tmpRepoPath.c_str(), wsRepoPath.c_str());
+            system(cmdBuf);
+            // Create startup files
+            sprintf(cmdBuf, "bash %s -d %s -t %s -p %s -i %s --password %s %s", 
+                rvScripts["generate-startup"].c_str(), 
+                ros2WsDir.generic_string().c_str(), 
+                tmpDir.generic_string().c_str(), 
+                i.repoName.c_str(), 
+                i.prop.interface.c_str(), 
+                localAuth.password.c_str(), 
+                i.prop.internetRequired ? "--internet" : "");
+            system(cmdBuf);
+        }
+
+        for (const auto& i : removeRepoVec)
+        {
+            std::string wsRepoPath = (ros2SrcDir / i.repoName).generic_string();
+            // Remove current repo
+            sprintf(cmdBuf, "rm -rf %s", wsRepoPath.c_str());
+            system(cmdBuf);
+            // Remove startup files
+            sprintf(cmdBuf, "bash %s -d %s -t %s -p %s --password %s --remove", 
+                rvScripts["generate-startup"].c_str(), 
+                ros2WsDir.generic_string().c_str(), 
+                tmpDir.generic_string().c_str(), 
+                i.repoName.c_str(), 
+                localAuth.password.c_str());
+            system(cmdBuf);
+        }
+
+        for (const auto& i : interVec)
+        {
+            std::string tmpInterfacePath = (tmpDir / i.repoName).generic_string();
+            std::string wsInterfacePath = (ros2SrcDir / i.repoName).generic_string();
+            sprintf(cmdBuf, "git clone %s -b %s %s -q", i.repoUrl.c_str(), i.repoBranch.c_str(), tmpInterfacePath.c_str());
+            system(cmdBuf);
+            sprintf(cmdBuf, "rm -rf %s", wsInterfacePath.c_str());
+            system(cmdBuf);
+            sprintf(cmdBuf, "cp -r %s %s", tmpInterfacePath.c_str(), wsInterfacePath.c_str());
+            system(cmdBuf);
+        }
+
+        // Start compile
+        sprintf(cmdBuf, "bash %s -d %s", 
+                rvScripts["colcon-build"].c_str(), 
+                ros2WsDir.generic_string().c_str());
+        system(cmdBuf);
+
+        // Generate .modulesettings under ros2WsDir
+        FILE* fp = fopen((ros2WsDir / ".modulesettings").generic_string().c_str(), "w");
+        if (fp != NULL)
+        {
+            for (const auto& i : installRepoVec)
+            {
+                fprintf(fp, "#%s:%s:%s:%s:%s!\n", 
+                    i.repoName.c_str(), 
+                    i.repoBranch.c_str(), 
+                    i.prop.interface.c_str(), 
+                    i.prop.ip.c_str(), 
+                    i.prop.internetRequired ? "true" : "false");
+            }
+            fclose(fp);
+        }
+        procF = false;
     }
 
     char** StrVecToCStrArr(const std::vector<std::string>& strVec)
