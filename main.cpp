@@ -333,7 +333,7 @@ int main(int argc, char** argv)
                             for (const auto& i : vec)
                             {
                                 // Remove startup files
-                                sprintf(buf, ". %s -d %s -t %s -p %s --password %s --remove", 
+                                sprintf(buf, "bash %s -d %s -t %s -p %s --password %s --remove", 
                                     rvScripts["generate-startup"].c_str(), 
                                     ros2WsDir.path.generic_string().c_str(), 
                                     tmpDir.path.generic_string().c_str(), 
