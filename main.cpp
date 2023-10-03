@@ -123,18 +123,18 @@ int main(int argc, char** argv)
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
     // Variable Definitions
-    const static size_t PATH_BUF_SIZE = 256;
+    const static size_t PATH_BUF_SIZE = 512;
 
     // Work directory
-    MyApp::MirrorPath tmpDir("./.rv_temp");
-    MyApp::MirrorPath ros2WsDir(MyApp::GetHomePath() / "ros2_ws");
-    MyApp::MirrorPath ros2SrcDir(ros2WsDir.path / "src");
-    MyApp::MirrorPath scriptDir("rv_scripts");
+    MyApp::WorkspacePath wsPath;
+    wsPath.setContentPath(MyApp::GetHomePath() / "rv_content");
+    wsPath.setROS2WS(MyApp::GetHomePath() / "ros2_ws");
+    wsPath.setRVWS(MyApp::GetHomePath() / "rv_ws");
 
     // Config file
     std::string rvScriptConfigFile = "script.conf";
     std::map<std::string, std::string> rvScripts;
-    bool findScriptF = MyApp::ReadScriptConf(rvScriptConfigFile, scriptDir.path, rvScripts);
+    bool findScriptF = MyApp::ReadScriptConf(rvScriptConfigFile, wsPath.content->path / "scripts", rvScripts);
     
     // Local network interface
     std::vector<std::string> ifVec;
@@ -151,6 +151,10 @@ int main(int argc, char** argv)
     std::vector<MyApp::Repo> installRepoVec;
     std::vector<MyApp::Repo> removeRepoVec;
     std::vector<MyApp::Repo> noChangeRepoVec;
+
+    // Non-ROS repos
+    std::vector<MyApp::Repo> installNonROSRepoVec;
+    std::vector<MyApp::Repo> removeNonROSRepoVec;
 
     // Interface vectors
     std::vector<MyApp::Repo> interVec;
@@ -209,6 +213,7 @@ int main(int argc, char** argv)
             {
                 if (ImGui::BeginMenu("Authentication"))
                 {
+                    ImGui::PushFont(&contentFont);
                     ImGui::SeparatorText("Local Authentication");
                     if (localAuth.isConfirmed)
                         ImGui::TextColored({0, 1, 0, 1}, "Password Confirmed!");
@@ -225,15 +230,26 @@ int main(int argc, char** argv)
                     {
                         ftpKeyPath.updatePath();
                     }
+                    ImGui::PopFont();
                     ImGui::EndMenu();
                 }
+
                 if (ImGui::BeginMenu("File"))
                 {
-                    ImGui::InputText("Temporary Directory", tmpDir.c_str, sizeof(tmpDir.c_str));
-                    ImGui::InputText("ROS2 Workspace", ros2WsDir.c_str, sizeof(ros2WsDir.c_str));
+                    ImGui::PushFont(&contentFont);
+                    ImGui::InputText("Content Path", wsPath.content->c_str, sizeof(wsPath.content->c_str));
+                    ImGui::InputText("ROS2 Workspace", wsPath.ros2->c_str, sizeof(wsPath.ros2->c_str));
+                    ImGui::InputText("RV Workspace", wsPath.rv->c_str, sizeof(wsPath.rv->c_str));
+
+                    static bool contentChangeF = false;
+                    static bool ros2ChangeF = false;
+                    static bool rvChangeF = false;
                     if (ImGui::Button("Set"))
                     {
-                        if (strcmp(tmpDir.c_str, tmpDir.path.generic_string().c_str()) != 0 || strcmp(ros2WsDir.c_str, ros2WsDir.path.generic_string().c_str()) != 0 )
+                        contentChangeF = strcmp(wsPath.content->c_str, wsPath.content->path.generic_string().c_str()) != 0;
+                        ros2ChangeF = strcmp(wsPath.ros2->c_str, wsPath.ros2->path.generic_string().c_str()) != 0;
+                        rvChangeF = strcmp(wsPath.rv->c_str, wsPath.rv->path.generic_string().c_str()) != 0;
+                        if (contentChangeF || ros2ChangeF || rvChangeF)
                             ImGui::OpenPopup("Path Changes");
                     }
                     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
@@ -244,74 +260,136 @@ int main(int argc, char** argv)
                         if (ImGui::BeginTable("pathChanges", 3))
                         {
                             ImVec4 modColor;
-                            ImGui::TableNextRow();
-                            ImGui::TableNextColumn();
-                            if (strcmp(tmpDir.c_str, tmpDir.path.generic_string().c_str()) == 0)
-                                modColor = repoColorNoChange;
-                            else
-                                modColor = repoColorInstall;
-                            ImGui::TextColored(modColor, tmpDir.path.generic_string().c_str());
-                            ImGui::TableNextColumn();
-                            ImGui::TextColored(modColor, " >> ");
-                            ImGui::TableNextColumn();
-                            ImGui::TextColored(modColor, tmpDir.c_str);
 
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            if (strcmp(ros2WsDir.c_str, ros2WsDir.path.generic_string().c_str()) == 0)
-                                modColor = repoColorNoChange;
-                            else
-                                modColor = repoColorInstall;
-                            ImGui::TextColored(modColor, ros2WsDir.path.generic_string().c_str());
+                            modColor = contentChangeF ? repoColorInstall : repoColorNoChange;
+                            ImGui::TextColored(modColor, wsPath.content->path.generic_string().c_str());
                             ImGui::TableNextColumn();
                             ImGui::TextColored(modColor, " >> ");
                             ImGui::TableNextColumn();
-                            ImGui::TextColored(modColor, ros2WsDir.c_str);
+                            ImGui::TextColored(modColor, wsPath.content->c_str);
+
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            modColor = ros2ChangeF ? repoColorInstall : repoColorNoChange;
+                            ImGui::TextColored(modColor, wsPath.ros2->path.generic_string().c_str());
+                            ImGui::TableNextColumn();
+                            ImGui::TextColored(modColor, " >> ");
+                            ImGui::TableNextColumn();
+                            ImGui::TextColored(modColor, wsPath.ros2->c_str);
+
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            modColor = rvChangeF ? repoColorInstall : repoColorNoChange;
+                            ImGui::TextColored(modColor, wsPath.rv->path.generic_string().c_str());
+                            ImGui::TableNextColumn();
+                            ImGui::TextColored(modColor, " >> ");
+                            ImGui::TableNextColumn();
+                            ImGui::TextColored(modColor, wsPath.rv->c_str);
+
                             ImGui::EndTable();
                         }
 
                         ImGui::Separator();
-                        static bool fileRemoveF = false;
+                        static bool fileRemoveF = true;
+                        ImGui::BeginDisabled();
                         ImGui::Checkbox("Remove Current Files", &fileRemoveF);
+                        ImGui::EndDisabled();
                         if (ImGui::Button("OK", ImVec2(150, 0)))
                         {
-                            if (fileRemoveF)
+                            if (localAuth.isConfirmed)
                             {
-                                auto vec = MyApp::ScanLocalPackages(ros2WsDir.path, ifVec);
-                                if (localAuth.isConfirmed)
+                                // Remove current installed packages under ROS2 workspace
+                                if (ros2ChangeF)
                                 {
+                                    auto vec = MyApp::ScanLocalPackages(wsPath.ros2->path, ifVec);
                                     char buf[PATH_BUF_SIZE];
-                                    sprintf(buf, "sudo rm -rf %s", tmpDir.path.generic_string().c_str());
-                                    system(buf);
                                     for (const auto& i : vec)
                                     {
                                         // Remove startup files
-                                        sprintf(buf, "bash %s -d %s -t %s -p %s --password %s --remove", 
+                                        sprintf(buf, "bash %s -d %s -p %s --password %s --remove", 
                                             rvScripts["generate-startup"].c_str(), 
-                                            ros2WsDir.path.generic_string().c_str(), 
-                                            tmpDir.path.generic_string().c_str(), 
+                                            wsPath.ros2->path.generic_string().c_str(), 
                                             i.repoName.c_str(), 
                                             localAuth.password.c_str());
                                         system(buf);
                                     }
-                                    sprintf(buf, "sudo rm -rf %s", ros2WsDir.path.generic_string().c_str());
+
+                                    // Remove current workspace
+                                    sprintf(buf, "sudo rm -rf %s", wsPath.ros2->path.generic_string().c_str());
+                                    system(buf);
+
+                                    // Update path
+                                    wsPath.ros2->updatePath();
+                                    wsPath.ros2Src->update(wsPath.ros2->path / "src");
+                                    
+                                    // Create new workspace
+                                    sprintf(buf, "mkdir -p %s", wsPath.ros2Src->c_str);
+                                    system(buf);
+
+                                }
+
+                                // Remove current installed packages under RV workspace
+                                if (rvChangeF)
+                                {
+                                    auto vec = MyApp::ScanLocalPackages(wsPath.rv->path, ifVec);
+                                    char buf[PATH_BUF_SIZE];
+                                    for (const auto& i : vec)
+                                    {
+                                        // Remove startup files
+                                        sprintf(buf, "bash %s -d %s -p %s --password %s --remove --no-ros", 
+                                            rvScripts["generate-startup"].c_str(), 
+                                            wsPath.rv->path.generic_string().c_str(), 
+                                            i.repoName.c_str(), 
+                                            localAuth.password.c_str());
+                                        system(buf);
+                                    }
+
+                                    // Remove current workspace
+                                    sprintf(buf, "sudo rm -rf %s", wsPath.rv->path.generic_string().c_str());
+                                    system(buf);
+
+                                    // Update path
+                                    wsPath.rv->updatePath();
+                                    wsPath.rvSrc->update(wsPath.rv->path / "src");
+                                    
+                                    // Create new workspace
+                                    sprintf(buf, "mkdir -p %s", wsPath.rvSrc->c_str);
                                     system(buf);
                                 }
-                                else
-                                    printf("Authentication Failed! File not removed.\n");
+
+                                // Move files to new directory
+                                if (contentChangeF)
+                                {
+                                    char buf[PATH_BUF_SIZE];
+                                    sprintf(buf, "mv %s %s", wsPath.content->path.generic_string().c_str(), wsPath.content->c_str);
+                                    system(buf);
+                                    wsPath.content->updatePath();
+
+                                    findScriptF = MyApp::ReadScriptConf(rvScriptConfigFile, wsPath.content->path / "scripts", rvScripts);
+                                }
+
+                                launchCmdStateStr.info("Path Changed!");
                             }
-                            tmpDir.updatePath();
-                            ros2WsDir.updatePath();
-                            ros2SrcDir.update(ros2WsDir.path / "src");
-                            launchCmdStateStr.info("Path Changed!");
-                            fileRemoveF = false;
+                            else
+                                printf("Authentication Failed! File not removed.\n");
+                            
+                            contentChangeF = false;
+                            ros2ChangeF = false;
+                            rvChangeF = false;
                             ImGui::CloseCurrentPopup();
                         }
                         ImGui::SameLine();;
                         if (ImGui::Button("Cancel", ImVec2(150, 0)))
                         {
-                            tmpDir.updateStr();
-                            ros2WsDir.updateStr();
+                            wsPath.content->updateStr();
+                            wsPath.ros2->updateStr();
+                            wsPath.rv->updateStr();
+
+                            contentChangeF = false;
+                            ros2ChangeF = false;
+                            rvChangeF = false;
                             ImGui::CloseCurrentPopup();
                         }
                         ImGui::EndPopup();
@@ -319,8 +397,13 @@ int main(int argc, char** argv)
                     ImGui::SameLine();
                     if (ImGui::Button("Reset"))
                     {
-                        tmpDir.updateStr();
-                        ros2WsDir.updateStr();
+                        wsPath.content->updateStr();
+                        wsPath.ros2->updateStr();
+                        wsPath.rv->updateStr();
+
+                        contentChangeF = false;
+                        ros2ChangeF = false;
+                        rvChangeF = false;
                     }
                     // Remove button
                     ImGui::Separator();
@@ -328,43 +411,78 @@ int main(int argc, char** argv)
                     {
                         if (localAuth.isConfirmed)
                         {
-                            auto vec = MyApp::ScanLocalPackages(ros2WsDir.path, ifVec);
-                            char buf[PATH_BUF_SIZE];
-                            for (const auto& i : vec)
+                            // ROS2 workspace
                             {
-                                // Remove startup files
-                                sprintf(buf, "bash %s -d %s -t %s -p %s --password %s --remove", 
-                                    rvScripts["generate-startup"].c_str(), 
-                                    ros2WsDir.path.generic_string().c_str(), 
-                                    tmpDir.path.generic_string().c_str(), 
-                                    i.repoName.c_str(), 
-                                    localAuth.password.c_str());
+                                auto vec = MyApp::ScanLocalPackages(wsPath.ros2->path, ifVec);
+                                char buf[PATH_BUF_SIZE];
+                                for (const auto& i : vec)
+                                {
+                                    // Remove startup files
+                                    sprintf(buf, "bash %s -d %s -t %s -p %s --password %s --remove", 
+                                        rvScripts["generate-startup"].c_str(), 
+                                        wsPath.ros2->path.generic_string().c_str(), 
+                                        wsPath.content->path.generic_string().c_str(), 
+                                        i.repoName.c_str(), 
+                                        localAuth.password.c_str());
+                                    system(buf);
+                                }
+                                sprintf(buf, "sudo rm -rf %s", wsPath.ros2->path.generic_string().c_str());
+                                system(buf);
+
+                                sprintf(buf, "mkdir -p %s", wsPath.ros2Src->path.generic_string().c_str());
                                 system(buf);
                             }
-                            sprintf(buf, "sudo rm -rf %s", ros2WsDir.path.generic_string().c_str());
-                            system(buf);
+
+                            // RV workspace
+                            {
+                                auto vec = MyApp::ScanLocalPackages(wsPath.rv->path, ifVec);
+                                char buf[PATH_BUF_SIZE];
+                                for (const auto& i : vec)
+                                {
+                                    // Remove startup files
+                                    sprintf(buf, "bash %s -d %s -t %s -p %s --password %s --remove --no-ros", 
+                                        rvScripts["generate-startup"].c_str(), 
+                                        wsPath.rv->path.generic_string().c_str(), 
+                                        wsPath.content->path.generic_string().c_str(), 
+                                        i.repoName.c_str(), 
+                                        localAuth.password.c_str());
+                                    system(buf);
+                                }
+                                sprintf(buf, "sudo rm -rf %s", wsPath.rv->path.generic_string().c_str());
+                                system(buf);
+
+                                sprintf(buf, "mkdir -p %s", wsPath.rvSrc->path.generic_string().c_str());
+                                system(buf);
+                            }
                         }
                         else
                             launchCmdStateStr.err("Authentication Failed!");
                     }
-                    if (ImGui::Button("Remove Temporary Files"))
+                    if (ImGui::Button("Remove Content"))
                     {
                         if (localAuth.isConfirmed)
                         {
                             char buf[PATH_BUF_SIZE];
-                            sprintf(buf, "sudo rm -rf %s", tmpDir.path.generic_string().c_str());
+                            sprintf(buf, "sudo rm -rf %s", wsPath.content->path.generic_string().c_str());
                             system(buf);
+
+                            sprintf(buf, "mkdir -p %s", wsPath.content->path.generic_string().c_str());
+                            system(buf);
+
+                            findScriptF = false;
                         }
                         else
                             launchCmdStateStr.err("Authentication Failed!");
                     }
-
+                    ImGui::PopFont();
                     ImGui::EndMenu();
                 }
+
                 if (ImGui::BeginMenu("Update"))
                 {
+                    ImGui::PushFont(&contentFont);
                     if (ImGui::Button("Scan"))
-                        findScriptF = MyApp::ReadScriptConf(rvScriptConfigFile, scriptDir.path, rvScripts);
+                        findScriptF = MyApp::ReadScriptConf(rvScriptConfigFile, wsPath.content->path / "scripts", rvScripts);
                     ImGui::SameLine();
                     if (findScriptF)
                         ImGui::TextColored(repoColorInstall, "Scripts found.");
@@ -378,9 +496,10 @@ int main(int argc, char** argv)
                         ImGui::TextColored(repoColorInstall, "Network IF found.");
                     else
                         ImGui::TextColored(repoColorRemove, "Network IF not found.");
-
+                    ImGui::PopFont();
                     ImGui::EndMenu();
                 }
+
                 ImGui::EndMainMenuBar();
             }
         }// Menu bar
@@ -402,6 +521,10 @@ int main(int argc, char** argv)
 
                     char buf[PATH_BUF_SIZE];
                     char cmdBuf[PATH_BUF_SIZE];
+
+                    // Create content directory if not exists
+                    sprintf(cmdBuf, "mkdir -p %s", wsPath.content->path.generic_string().c_str());
+                    system(cmdBuf);
                     
                     std::vector<std::string> repoStrVec;
 
@@ -426,7 +549,36 @@ int main(int argc, char** argv)
                         if (splitStr.size() != 3)
                             continue;
                         interVec.emplace_back(splitStr[0], splitStr[1], splitStr[2], ifVec);
-                        MyApp::UpdateRepoBranch(interVec.back(), tmpDir.path, rvScripts["scan-branch"]);
+                        
+                        // Check repo under content. Download new repo if content repo not found.
+                        std::string _repoUrl = interVec.back().repoUrl;
+                        std::string _repoName = interVec.back().repoName;
+                        fs::path _repoContentDir = wsPath.content->path / _repoName;
+                        if (!fs::exists(_repoContentDir / ".git"))
+                        {
+                            sprintf(cmdBuf, "rm -rf %s", _repoContentDir.generic_string().c_str());
+                            system(cmdBuf);
+
+                            sprintf(cmdBuf, "git clone \"%s\" \"%s\" -q", _repoUrl.c_str(), _repoContentDir.generic_string().c_str());
+                            system(cmdBuf);
+                            
+                            if (!fs::exists(_repoContentDir / ".git"))
+                            {
+                                printf("Clone package %s (%s) error. Ignored...\n", _repoName.c_str(), _repoUrl.c_str());
+                                interVec.pop_back();
+                                continue;
+                            }
+                            printf("Clone %s package under %s\n", _repoName.c_str(), _repoContentDir.generic_string().c_str());
+                        }
+
+                        // Check repo branch.
+                        interVec.back().repoBranchVec = MyApp::CheckRepoBranch(_repoContentDir);
+                        if (interVec.back().repoBranchVec.size() <= 0)
+                        {
+                            printf("Get branch error: package %s. Ignored...\n", _repoName.c_str());
+                            interVec.pop_back();
+                            continue;
+                        }
                     }
 
                     // Online module list check
@@ -451,18 +603,50 @@ int main(int argc, char** argv)
                         if (splitStr.size() != 3)
                             continue;
                         repoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[1], splitStr[2], ifVec}, {false, false}}));
-                        MyApp::UpdateRepoBranch(repoVec.back().first, tmpDir.path, rvScripts["scan-branch"]);
+
+                        // Check repo under content. Download new repo if content repo not found.
+                        std::string _repoUrl = repoVec.back().first.repoUrl;
+                        std::string _repoName = repoVec.back().first.repoName;
+                        fs::path _repoContentDir = wsPath.content->path / _repoName;
+                        if (!fs::exists(_repoContentDir / ".git"))
+                        {
+                            sprintf(cmdBuf, "rm -rf %s", _repoContentDir.generic_string().c_str());
+                            system(cmdBuf);
+
+                            sprintf(cmdBuf, "git clone \"%s\" \"%s\" -q", _repoUrl.c_str(), _repoContentDir.generic_string().c_str());
+                            system(cmdBuf);
+                            
+                            if (!fs::exists(_repoContentDir / ".git"))
+                            {
+                                printf("Clone package %s (%s) error. Ignored...\n", _repoName.c_str(), _repoUrl.c_str());
+                                repoVec.pop_back();
+                                continue;
+                            }
+                            printf("Clone %s package under %s\n", _repoName.c_str(), _repoContentDir.generic_string().c_str());
+                        }
+
+                        // Check repo branch.
+                        repoVec.back().first.repoBranchVec = MyApp::CheckRepoBranch(_repoContentDir);
+                        if (repoVec.back().first.repoBranchVec.size() <= 0)
+                        {
+                            printf("Get branch error: package %s. Ignored...\n", _repoName.c_str());
+                            repoVec.pop_back();
+                            continue;
+                        }
+
+                        // Check ROS2 support
+                        repoVec.back().first.nonROS = !MyApp::CheckROSSupport(_repoContentDir);
                     }
 
                     // Local module installation status
                     repoStrVec.clear();
-                    fp = fopen((ros2WsDir.path / ".modulesettings").generic_string().c_str(), "r");
+                    fp = fopen((wsPath.ros2->path / ".modulesettings").generic_string().c_str(), "r");
                     if (fp != NULL)
                     {
                         while (fgets(buf, PATH_BUF_SIZE, fp) != NULL)
                         {
                             std::string recvStr(buf);
-                            std::string repoStr = recvStr.substr(recvStr.find('#') + 1, recvStr.rfind('!') - 1);// #cpp_dataserver:master:eth2:dhcp:true!
+                            std::string repoStr = recvStr.substr(recvStr.find('#') + 1, recvStr.rfind('!') - 1);// #cpp_dataserver:master:eth2:dhcp:true:false!
                             if (repoStr.length() > 0 && recvStr != repoStr)
                                 repoStrVec.emplace_back(repoStr);
                         }
@@ -472,10 +656,10 @@ int main(int argc, char** argv)
                     for (const auto& i : repoStrVec)// .modulesettings
                     {
                         auto splitStr = MyApp::split(i, ":");
-                        if (splitStr.size() != 5)// cpp_dataserver:master:eth2:dhcp:true
+                        if (splitStr.size() != 6)// cpp_dataserver:master:eth2:dhcp:true:false
                             continue;
                         bool deprecatedF = true;
-                        MyApp::RepoNetworkProp prop(splitStr[2], splitStr[3], (splitStr[4] == "true" ? true : false), ifVec);
+                        MyApp::RepoNetworkProp prop(splitStr[2], splitStr[3], splitStr[4] == "true", ifVec);
 
                         {
                             // Check network interface deprecated
@@ -501,6 +685,7 @@ int main(int argc, char** argv)
                             {
                                 repo.prop = prop;
                                 repo.repoBranch = splitStr[1];
+                                repo.nonROS = splitStr[5] == "true";
 
                                 {
                                     // Check branch deprecated
@@ -529,6 +714,7 @@ int main(int argc, char** argv)
                         {
                             deprecRepoVec.emplace_back(std::pair<MyApp::Repo, MyApp::ModSign>({{splitStr[0], splitStr[0], "", prop}, {true, true}}));
                             deprecRepoVec.back().first.repoBranch = splitStr[1];
+                            deprecRepoVec.back().first.nonROS = splitStr[5] == "true";
                         }
                     }
                     launchCmdStateStr.info("Repo list updated!");
@@ -546,19 +732,37 @@ int main(int argc, char** argv)
                     installRepoVec.clear();
                     removeRepoVec.clear();
                     noChangeRepoVec.clear();
+
+                    installNonROSRepoVec.clear();
+                    removeNonROSRepoVec.clear();
+                    // TODO: Add non-ROS method
+
                     for (const auto& [repo, modSign] : repoVec)
                         if (modSign.second)
                         {
                             if (repo.repoBranchDeprecIdx < 0 && repo.prop.interfaceDeprecIdx < 0 && repo.prop.interface != "NONE")
-                                installRepoVec.emplace_back(repo);
-                            else
-                                noChangeRepoVec.emplace_back(repo);
+                            {
+                                if (repo.nonROS)
+                                    installNonROSRepoVec.emplace_back(repo);
+                                else
+                                    installRepoVec.emplace_back(repo);
+                            }
                         }
                         else if (modSign.first != modSign.second)
-                            removeRepoVec.emplace_back(repo);
+                        {
+                            if (repo.nonROS)
+                                removeNonROSRepoVec.emplace_back(repo);
+                            else
+                                removeRepoVec.emplace_back(repo);
+                        }
                     for (const auto& [repo, modSign] : deprecRepoVec)
                         if (!modSign.second)
-                            removeRepoVec.emplace_back(repo);
+                        {
+                            if (repo.nonROS)
+                                removeNonROSRepoVec.emplace_back(repo);
+                            else
+                                removeRepoVec.emplace_back(repo);
+                        }
                         else
                             noChangeRepoVec.emplace_back(repo);
                     ImGui::OpenPopup("Confirm Changes");
@@ -629,6 +833,21 @@ int main(int argc, char** argv)
                         ImGui::TableNextColumn();
                         ImGui::TextColored(repoColorInstall, ("[" + i.repoBranch + "]").c_str());
                     }
+                    for (auto& i : installNonROSRepoVec)
+                    {
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(repoColorInstall, i.repoDescribe.c_str());
+                        if (ImGui::IsItemHovered() && ImGui::BeginTooltip())
+                        {
+                            ImGui::Text("Interface: %s", i.prop.interface.c_str());
+                            ImGui::Text("IP: %s", i.prop.ip.c_str());
+                            ImGui::Text("Internet: %s", i.prop.internetRequired ? "yes" : "no");
+                            ImGui::EndTooltip();
+                        }
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(repoColorInstall, ("[" + i.repoBranch + "]").c_str());
+                    }
                     ImGui::EndTable();
                 }
                 ImGui::PopFont();
@@ -637,6 +856,17 @@ int main(int argc, char** argv)
                 ImGui::SeparatorText("Remove");
                 ImGui::PushFont(&contentFont);
                 for (auto& i : removeRepoVec)
+                {
+                    ImGui::TextColored(repoColorRemove, i.repoDescribe.c_str());
+                    if (ImGui::IsItemHovered() && ImGui::BeginTooltip())
+                    {
+                        ImGui::Text("Interface: %s", i.prop.interface.c_str());
+                        ImGui::Text("IP: %s", i.prop.ip.c_str());
+                        ImGui::Text("Internet: %s", i.prop.internetRequired ? "yes" : "no");
+                        ImGui::EndTooltip();
+                    }
+                }
+                for (auto& i : removeNonROSRepoVec)
                 {
                     ImGui::TextColored(repoColorRemove, i.repoDescribe.c_str());
                     if (ImGui::IsItemHovered() && ImGui::BeginTooltip())
@@ -693,7 +923,7 @@ int main(int argc, char** argv)
                     // Authentication
                     if (localAuth.isConfirmed)
                     {
-                        installRemoveTh = std::thread(MyApp::RunInstallRemove, tmpDir.path, ros2WsDir.path, ros2SrcDir.path, rvScripts, installRepoVec, removeRepoVec, interVec, localAuth, std::ref(procF));
+                        installRemoveTh = std::thread(MyApp::RunInstallRemove, wsPath, rvScripts, installRepoVec, removeRepoVec, interVec, installNonROSRepoVec, removeNonROSRepoVec, noChangeRepoVec, localAuth, std::ref(procF));
                     }
                     else
                     {
@@ -767,7 +997,7 @@ int main(int argc, char** argv)
                             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 1, 0, 1));
                         if (ImGui::Selectable(i.first.repoDescribe.c_str()))
                         {
-                            launchFilePath = ros2SrcDir.path / i.first.repoName / "launch/common.yaml";
+                            launchFilePath = wsPath.ros2Src->path / i.first.repoName / "launch/common.yaml";
                             launchFileF = MyApp::ReadCommonFile(launchFilePath.generic_string().c_str(), launchFile, LAUNCH_CONTENT_SIZE);
                             if (launchFileF)
                                 launchCmdStateStr.info("common.yaml found :)");
@@ -841,7 +1071,7 @@ int main(int argc, char** argv)
                         ImGui::TableNextColumn();
                         if (ImGui::Selectable(i.first.repoDescribe.c_str()))
                         {
-                            launchFilePath = ros2SrcDir.path / i.first.repoName / "launch/common.yaml";
+                            launchFilePath = wsPath.ros2Src->path / i.first.repoName / "launch/common.yaml";
                             launchFileF = MyApp::ReadCommonFile(launchFilePath.generic_string().c_str(), launchFile, LAUNCH_CONTENT_SIZE);
                             if (launchFileF)
                                 launchCmdStateStr.info("common.yaml found :)");

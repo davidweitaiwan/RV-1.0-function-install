@@ -26,6 +26,7 @@
 #include <filesystem>
 
 #include <map>
+#include <set>
 #include <deque>
 #include <vector>
 #include <string>
@@ -45,20 +46,25 @@ typedef std::pair<bool, bool> ModSign;
 class RepoNetworkProp;
 struct Repo;
 struct AUTH;
+struct ColoredString;
+struct MirrorPath;
+struct WorkspacePath;
+
 static void HelpMarker(const char* desc);
 float ValueMapping(float value, float leftMin, float leftMax, float rightMin, float rightMax);
 void RenderDockerUI();
 fs::path GetHomePath();
-std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir, const std::vector<std::string>& interfaceVec);
-void UpdateRepoBranch(Repo& repo, fs::path tmpDir, const std::string& scriptUrl);
+std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& wsDir, const std::vector<std::string>& interfaceVec);
 bool ReadCommonFile(const char* path, char* outStr, const size_t& outStrSize);
 bool ReadScriptConf(const fs::path& rvScriptConfigFile, const fs::path& rvScriptDir, std::map<std::string, std::string>& rvScripts);
 bool ScanIF(const std::string& scriptUrl, std::vector<std::string>& ifVec);
+bool CheckROSSupport(const fs::path& packageDir);
+std::vector<std::string> CheckRepoBranch(const fs::path& repoDir);
 bool SudoAuthentication(const std::string& pswd);
 bool SetPasswordBox(const std::string& btnName, AUTH& auth);
 std::vector<std::string> split(const std::string& str, const std::string& delimiter);
 
-void RunInstallRemove(fs::path tmpDir, fs::path ros2WsDir, fs::path ros2SrcDir, std::map<std::string, std::string> rvScripts, std::vector<Repo> installRepoVec, std::vector<Repo> removeRepoVec, std::vector<Repo> interVec, AUTH localAuth, bool& endF);
+void RunInstallRemove(WorkspacePath wsPath, std::map<std::string, std::string> rvScripts, std::vector<Repo> installRepoVec, std::vector<Repo> removeRepoVec, std::vector<Repo> interVec, std::vector<Repo> installNonROSRepoVec, std::vector<Repo> removeNonROSRepoVec, std::vector<Repo> noChangeRepoVec, AUTH localAuth, bool& endF);
 
 char** StrVecToCStrArr(const std::vector<std::string>& str);
 
@@ -116,6 +122,7 @@ struct Repo
     int repoBranchIdx;// < 0 if not set by combo
     int repoBranchDeprecIdx;
     RepoNetworkProp prop;
+    bool nonROS;
 
     Repo(const std::string& des, const std::string& name, const std::string& url, const std::vector<std::string>& interfaceVec) : 
         repoDescribe(des), 
@@ -124,7 +131,8 @@ struct Repo
         repoBranch("master"), 
         repoBranchIdx(0), 
         repoBranchDeprecIdx(-1), 
-        prop(interfaceVec) {}
+        prop(interfaceVec), 
+        nonROS(false) {}
     
     Repo(const std::string& des, const std::string& name, const std::string& url, const RepoNetworkProp& prop) : 
         repoDescribe(des), 
@@ -133,7 +141,8 @@ struct Repo
         repoBranch("master"), 
         repoBranchIdx(0), 
         repoBranchDeprecIdx(-1), 
-        prop(prop) {}
+        prop(prop), 
+        nonROS(false) {}
 };
 
 struct AUTH
@@ -206,6 +215,76 @@ struct MirrorPath
         strcpy(c_str, path.generic_string().c_str());
     }
 };
+
+// Always
+struct WorkspacePath
+{
+    MirrorPath* content;
+    MirrorPath* ros2;
+    MirrorPath* ros2Src;
+    MirrorPath* rv;
+    MirrorPath* rvSrc;
+
+    WorkspacePath()
+    {
+        content = nullptr;
+        ros2 = nullptr;
+        ros2Src = nullptr;
+        rv = nullptr;
+        rvSrc = nullptr;
+    }
+
+    void setROS2WS(const fs::path& path)
+    {
+        if (ros2 == nullptr)
+            ros2 = new MirrorPath(path);
+        else
+        {
+            ros2->path = path;
+            ros2->updateStr();
+        }
+
+        if (ros2Src == nullptr)
+            ros2Src = new MirrorPath(path / "src");
+        else
+        {
+            ros2Src->path = path / "src";
+            ros2Src->updateStr();
+        }
+    }
+
+    void setRVWS(const fs::path& path)
+    {
+        if (rv == nullptr)
+            rv = new MirrorPath(path);
+        else
+        {
+            rv->path = path;
+            rv->updateStr();
+        }
+
+        if (rvSrc == nullptr)
+            rvSrc = new MirrorPath(path / "src");
+        else
+        {
+            rvSrc->path = path / "src";
+            rvSrc->updateStr();
+        }
+    }
+
+    void setContentPath(const fs::path& path)
+    {
+        if (content == nullptr)
+            content = new MirrorPath(path);
+        else
+        {
+            content->path = path;
+            content->updateStr();
+        }
+    }
+};
+
+
 
 template<typename T>
 class Scope

@@ -103,18 +103,18 @@ namespace MyApp
         return retStr;
     }
 
-    std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& ros2WsDir, const std::vector<std::string>& interfaceVec)
+    std::vector<MyApp::Repo> ScanLocalPackages(const fs::path& wsDir, const std::vector<std::string>& interfaceVec)
     {
         const static uint16_t BUFF_SIZE = 256;
         char buf[BUFF_SIZE];
         std::vector<std::string> repoStrVec;
-        FILE* fp = fopen((ros2WsDir / ".modulesettings").generic_string().c_str(), "r");
+        FILE* fp = fopen((wsDir / ".modulesettings").generic_string().c_str(), "r");
         if (fp != NULL)
         {
             while (fgets(buf, BUFF_SIZE, fp) != NULL)
             {
                 std::string recvStr(buf);
-                recvStr = recvStr.substr(recvStr.find('#') + 1, recvStr.find('!') - 1);// #cpp_dataserver:master:eth2:dhcp:true!
+                recvStr = recvStr.substr(recvStr.find('#') + 1, recvStr.find('!') - 1);// #cpp_dataserver:master:eth2:dhcp:true:false!
                 if (recvStr.length() > 0)
                     repoStrVec.emplace_back(recvStr);
             }
@@ -125,9 +125,9 @@ namespace MyApp
         for (const auto& i : repoStrVec)// .modulesettings
         {
             auto splitStr = MyApp::split(i, ":");
-            if (splitStr.size() != 5)// cpp_dataserver:master:eth2:dhcp:true
+            if (splitStr.size() != 6)// cpp_dataserver:master:eth2:dhcp:true:false
                 continue;
-            MyApp::RepoNetworkProp prop(splitStr[2], splitStr[3], (splitStr[4] == "true" ? true : false), interfaceVec);
+            MyApp::RepoNetworkProp prop(splitStr[2], splitStr[3], splitStr[4] == "true", interfaceVec);
             {
                 // Check network interface deprecated
                 bool isDeprecF = true;
@@ -148,33 +148,9 @@ namespace MyApp
             }
             ret.emplace_back(splitStr[0], splitStr[0], "", prop);
             ret.back().repoBranch = splitStr[1];
+            ret.back().nonROS = splitStr[5] == "true";
         }
         return ret;
-    }
-
-    void UpdateRepoBranch(Repo& repo, fs::path tmpDir, const std::string& scriptUrl)
-    {
-        const static uint16_t BUFF_SIZE = 1024;
-        char cmdBuf[BUFF_SIZE];
-        char buf[BUFF_SIZE];
-        
-        sprintf(cmdBuf, "bash %s -u %s -t %s -p %s", 
-                scriptUrl.c_str(), 
-                repo.repoUrl.c_str(), 
-                tmpDir.generic_string().c_str(), 
-                repo.repoName.c_str());
-        FILE* fp = popen(cmdBuf, "r");
-        if (fp != NULL)
-        {
-            while (fgets(buf, BUFF_SIZE, fp) != NULL)
-            {
-                std::string recvStr(buf);
-                std::string branchStr = recvStr.substr(recvStr.find('^') + 1, recvStr.find('!') - 1);// ^master!
-                if (branchStr.length() > 0 && recvStr != branchStr)
-                    repo.repoBranchVec.push_back(branchStr);
-            }
-            pclose(fp);
-        }
     }
 
     bool ReadCommonFile(const char* path, char* outStr, const size_t& outStrSize)
@@ -224,11 +200,11 @@ namespace MyApp
             rvScripts.clear();
             char buf[128];
             char cmdBuf[128];
-            sprintf(cmdBuf, "rm -rf %s && mkdir -p %s", rvScriptDir.generic_string().c_str(), rvScriptDir.generic_string().c_str());
+            sprintf(cmdBuf, "mkdir -p %s", rvScriptDir.generic_string().c_str(), rvScriptDir.generic_string().c_str());
             system(cmdBuf);
             for (const auto& [k, url] : rvScriptsUrl)
             {
-                sprintf(cmdBuf, "wget -qP %s %s", rvScriptDir.generic_string().c_str(), url.c_str());
+                sprintf(cmdBuf, "wget -nc -qP %s %s", rvScriptDir.generic_string().c_str(), url.c_str());
                 system(cmdBuf);
                 bool fileExistF = false;
                 for (auto& fp : std::filesystem::directory_iterator(rvScriptDir))
@@ -296,6 +272,61 @@ namespace MyApp
         return true;
     }
 
+    bool CheckROSSupport(const fs::path& packageDir)
+    {
+        if (!fs::exists(packageDir))
+            return false;
+
+        std::map<std::string, int> checkMap;
+        
+        for (const auto& entry : fs::directory_iterator(packageDir))
+            checkMap[entry.path().filename().generic_string()]++;
+        try
+        {
+            if (checkMap["CMakeLists.txt"] != 1)
+                return false;
+            if (checkMap["package.xml"] != 1)
+                return false;
+        }
+        catch(const std::exception& e)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    std::vector<std::string> CheckRepoBranch(const fs::path& repoDir)
+    {
+        std::vector<std::string> ret;
+        char buf[128];
+        char cmdBuf[256];
+        fs::path gitDir = repoDir / ".git";
+        try
+        {
+            if (fs::exists(gitDir))
+            {
+                sprintf(cmdBuf, "git --git-dir=%s branch -r | grep -v 'HEAD' | grep -Po '(?<=/)[\\w\\W]+$' | awk '{print \"^\"$0\"!\"}'", gitDir.generic_string().c_str());
+                FILE* fp = popen(cmdBuf, "r");
+                if (fp != NULL)
+                {
+                    while (fgets(buf, 128, fp) != NULL)
+                    {
+                        std::string recvStr(buf);
+                        std::string branchStr = recvStr.substr(recvStr.find('^') + 1, recvStr.rfind('!') - 1);// ^master!
+                        if (branchStr.length() > 0 && recvStr != branchStr)
+                            ret.emplace_back(branchStr);
+                    }
+                    pclose(fp);
+                }
+            }
+        }
+        catch (...)
+        {
+            return {};
+        }
+        return ret;
+    }
+
     bool SetPasswordBox(const std::string& btnName, AUTH& auth)
     {
         bool successF = false;
@@ -356,16 +387,19 @@ namespace MyApp
         return splitStrings;
     }
 
-    void RunInstallRemove(fs::path tmpDir, fs::path ros2WsDir, fs::path ros2SrcDir, std::map<std::string, std::string> rvScripts, std::vector<Repo> installRepoVec, std::vector<Repo> removeRepoVec, std::vector<Repo> interVec, AUTH localAuth, bool& procF)
+    void RunInstallRemove(WorkspacePath wsPath, std::map<std::string, std::string> rvScripts, std::vector<Repo> installRepoVec, std::vector<Repo> removeRepoVec, std::vector<Repo> interVec, std::vector<Repo> installNonROSRepoVec, std::vector<Repo> removeNonROSRepoVec, std::vector<Repo> noChangeRepoVec, AUTH localAuth, bool& procF)
     {
         procF = true;
         // Run installation
         char cmdBuf[1024];
-        printf("Create temporary directories...\n");
-        sprintf(cmdBuf, "rm -rf %s", tmpDir.generic_string().c_str());
-        system(cmdBuf);
-        sprintf(cmdBuf, "mkdir -p %s", tmpDir.generic_string().c_str());
-        system(cmdBuf);
+        auto contentDir = wsPath.content->path;
+        auto ros2WsDir = wsPath.ros2->path;
+        auto ros2SrcDir = wsPath.ros2Src->path;
+        auto rvWsDir = wsPath.rv->path;
+        auto rvSrcDir = wsPath.rvSrc->path;
+
+        std::vector<Repo> outFileVec;
+
         printf("Create ROS2 workspace...\n");
         sprintf(cmdBuf, "mkdir -p %s", ros2SrcDir.generic_string().c_str());
         system(cmdBuf);
@@ -373,75 +407,147 @@ namespace MyApp
         printf("Update ROS2 workspace package files...\n");
         for (const auto& i : installRepoVec)
         {
-            std::string tmpRepoPath = (tmpDir / i.repoName).generic_string();
+            std::string tmpRepoPath = (contentDir / i.repoName).generic_string();
             std::string wsRepoPath = (ros2SrcDir / i.repoName).generic_string();
-            // Clone latest repo
-            sprintf(cmdBuf, "git clone %s -b %s %s -q", i.repoUrl.c_str(), i.repoBranch.c_str(), tmpRepoPath.c_str());
-            system(cmdBuf);
+
             // Remove current repo
             sprintf(cmdBuf, "rm -rf %s", wsRepoPath.c_str());
             system(cmdBuf);
+
             // Copy new repo to ROS2 workspace
             sprintf(cmdBuf, "cp -r %s %s", tmpRepoPath.c_str(), wsRepoPath.c_str());
-            system(cmdBuf);
+            if (system(cmdBuf) != 0)
+            {
+                printf("Copy repo %s failed. Ignored...\n", tmpRepoPath.c_str());
+                continue;
+            }
+
             // Create startup files
-            sprintf(cmdBuf, "bash %s -d %s -t %s -p %s -i %s --password %s %s", 
+            sprintf(cmdBuf, "bash %s -d %s -p %s -i %s --password %s %s", 
                 rvScripts["generate-startup"].c_str(), 
                 ros2WsDir.generic_string().c_str(), 
-                tmpDir.generic_string().c_str(), 
                 i.repoName.c_str(), 
                 i.prop.interface.c_str(), 
                 localAuth.password.c_str(), 
                 i.prop.internetRequired ? "--internet" : "");
             system(cmdBuf);
+            outFileVec.push_back(i);
         }
 
         for (const auto& i : removeRepoVec)
         {
             std::string wsRepoPath = (ros2SrcDir / i.repoName).generic_string();
-            // Remove current repo
-            sprintf(cmdBuf, "rm -rf %s", wsRepoPath.c_str());
-            system(cmdBuf);
             // Remove startup files
-            sprintf(cmdBuf, "bash %s -d %s -t %s -p %s --password %s --remove", 
+            sprintf(cmdBuf, "bash %s -d %s -p %s --password %s --remove", 
                 rvScripts["generate-startup"].c_str(), 
                 ros2WsDir.generic_string().c_str(), 
-                tmpDir.generic_string().c_str(), 
                 i.repoName.c_str(), 
                 localAuth.password.c_str());
+            system(cmdBuf);
+
+            // Remove current repo
+            sprintf(cmdBuf, "rm -rf %s", wsRepoPath.c_str());
             system(cmdBuf);
         }
 
         for (const auto& i : interVec)
         {
-            std::string tmpInterfacePath = (tmpDir / i.repoName).generic_string();
+            std::string tmpInterfacePath = (contentDir / i.repoName).generic_string();
             std::string wsInterfacePath = (ros2SrcDir / i.repoName).generic_string();
-            sprintf(cmdBuf, "git clone %s -b %s %s -q", i.repoUrl.c_str(), i.repoBranch.c_str(), tmpInterfacePath.c_str());
-            system(cmdBuf);
             sprintf(cmdBuf, "rm -rf %s", wsInterfacePath.c_str());
             system(cmdBuf);
             sprintf(cmdBuf, "cp -r %s %s", tmpInterfacePath.c_str(), wsInterfacePath.c_str());
-            system(cmdBuf);
+            if (system(cmdBuf) != 0)
+            {
+                printf("Copy interface %s failed. Force exit.\n", tmpInterfacePath.c_str());
+                procF = false;
+                return;
+            }
         }
 
-        // Start compile
+        // Start compile ROS2 packages
         sprintf(cmdBuf, "bash %s -d %s", 
                 rvScripts["colcon-build"].c_str(), 
                 ros2WsDir.generic_string().c_str());
         system(cmdBuf);
 
+
+        printf("Create RV workspace...\n");
+        sprintf(cmdBuf, "mkdir -p %s", rvSrcDir.generic_string().c_str());
+        system(cmdBuf);
+
+        // Non-ROS2 installation
+        for (const auto& i : installNonROSRepoVec)
+        {
+            std::string tmpRepoPath = (contentDir / i.repoName).generic_string();
+            std::string wsRepoPath = (rvSrcDir / i.repoName).generic_string();
+
+            // Remove current repo
+            sprintf(cmdBuf, "rm -rf %s", wsRepoPath.c_str());
+            system(cmdBuf);
+
+            // Copy new repo to RV workspace
+            sprintf(cmdBuf, "cp -r %s %s", tmpRepoPath.c_str(), wsRepoPath.c_str());
+            if (system(cmdBuf) != 0)
+            {
+                printf("Copy repo %s failed. Ignored...\n", tmpRepoPath.c_str());
+                continue;
+            }
+
+            // Create startup files
+            sprintf(cmdBuf, "bash %s -d %s -p %s -i %s --password %s %s --no-ros", 
+                rvScripts["generate-startup"].c_str(), 
+                rvWsDir.generic_string().c_str(), 
+                i.repoName.c_str(), 
+                i.prop.interface.c_str(), 
+                localAuth.password.c_str(), 
+                i.prop.internetRequired ? "--internet" : "");
+            system(cmdBuf);
+            outFileVec.push_back(i);
+        }
+
+        for (const auto& i : removeNonROSRepoVec)
+        {
+            std::string wsRepoPath = (rvSrcDir / i.repoName).generic_string();
+            // Remove startup files
+            sprintf(cmdBuf, "bash %s -d %s -p %s --password %s --remove --no-ros", 
+                rvScripts["generate-startup"].c_str(), 
+                rvWsDir.generic_string().c_str(), 
+                i.repoName.c_str(), 
+                localAuth.password.c_str());
+            system(cmdBuf);
+
+            // Remove current repo
+            sprintf(cmdBuf, "rm -rf %s", wsRepoPath.c_str());
+            system(cmdBuf);
+        }
+
+
         // Generate .modulesettings under ros2WsDir
         FILE* fp = fopen((ros2WsDir / ".modulesettings").generic_string().c_str(), "w");
         if (fp != NULL)
         {
-            for (const auto& i : installRepoVec)
+            for (const auto& i : outFileVec)
             {
-                fprintf(fp, "#%s:%s:%s:%s:%s!\n", 
+                fprintf(fp, "#%s:%s:%s:%s:%s:%s!\n", 
                     i.repoName.c_str(), 
                     i.repoBranch.c_str(), 
                     i.prop.interface.c_str(), 
                     i.prop.ip.c_str(), 
-                    i.prop.internetRequired ? "true" : "false");
+                    i.prop.internetRequired ? "true" : "false", 
+                    i.nonROS ? "true" : "false");
+            }
+
+            // For deprecated
+            for (const auto& i : noChangeRepoVec)
+            {
+                fprintf(fp, "#%s:%s:%s:%s:%s:%s!\n", 
+                    i.repoName.c_str(), 
+                    i.repoBranch.c_str(), 
+                    i.prop.interface.c_str(), 
+                    i.prop.ip.c_str(), 
+                    i.prop.internetRequired ? "true" : "false", 
+                    i.nonROS ? "true" : "false");
             }
             fclose(fp);
         }
