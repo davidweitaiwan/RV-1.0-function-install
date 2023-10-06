@@ -274,25 +274,25 @@ namespace MyApp
 
     bool CheckROSSupport(const fs::path& packageDir)
     {
-        if (!fs::exists(packageDir))
+        if (!fs::exists(packageDir / "package.xml"))
             return false;
 
-        std::map<std::string, int> checkMap;
-        
-        for (const auto& entry : fs::directory_iterator(packageDir))
-            checkMap[entry.path().filename().generic_string()]++;
-        try
+        char buf[256];
+        char cmdBuf[256];
+
+        sprintf(cmdBuf, "cat %s | grep build_type | grep -Po \"ament_(cmake|python)\" | awk '{print \"^\"$0\"!\"}'", (packageDir / "package.xml").generic_string().c_str());
+        FILE* fp = popen(cmdBuf, "r");
+        if (fp != NULL)
         {
-            if (checkMap["CMakeLists.txt"] != 1)
-                return false;
-            if (checkMap["package.xml"] != 1)
-                return false;
+            while (fgets(buf, 256, fp) != NULL)
+            {
+                std::string recvStr(buf);
+                std::string ret = recvStr.substr(recvStr.find('^') + 1, recvStr.rfind('!') - 1);// ^ament_cmake! or ^ament_python!
+                if (ret.length() > 0 && recvStr != ret)
+                    return true;
+            }
+            pclose(fp);
         }
-        catch(const std::exception& e)
-        {
-            return false;
-        }
-        return true;
     }
 
     std::vector<std::string> CheckRepoBranch(const fs::path& repoDir)

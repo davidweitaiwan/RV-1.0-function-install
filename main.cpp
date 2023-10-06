@@ -500,6 +500,16 @@ int main(int argc, char** argv)
                     ImGui::EndMenu();
                 }
 
+                if (ImGui::BeginMenu("Help"))
+                {
+                    ImGui::PushFont(&contentFont);
+                    ImGui::Text("Version: ");
+                    ImGui::SameLine();
+                    ImGui::TextColored(repoColorInstall, "%3.3f", VCU_INSTALL_VERSION);
+                    ImGui::PopFont();
+                    ImGui::EndMenu();
+                }
+
                 ImGui::EndMainMenuBar();
             }
         }// Menu bar

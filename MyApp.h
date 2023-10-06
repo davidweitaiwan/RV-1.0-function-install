@@ -39,6 +39,8 @@
 
 #include "imgui.h"
 
+#define VCU_INSTALL_VERSION 1.1
+
 namespace MyApp
 {
 
