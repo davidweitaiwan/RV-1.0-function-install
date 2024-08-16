@@ -27,7 +27,7 @@ The VCU installer can be easily deployed by running pre-install script. There ar
     ```
 2. **Run the pre-install script using `curl`**
     ```bash
-    curl -fsSL ftp://61.220.23.239/rv-11/get-vcu-install.sh | bash
+    curl -fsSL ftp://61.220.23.239/rv-12/get-vcu-install.sh | bash
     ```
 The new directory `rv-vcu-install` will be created under `$HOME`.
 
@@ -72,11 +72,11 @@ sudo chmod a+x vcu-install
 The configure files and `vcu-install` must be put in same directory.
 - **`script.conf` for scripts downloading (required)**
     ```bash
-    wget -O script.conf ftp://61.220.23.239/rv-11/vcu-install/script.conf
+    wget -O script.conf ftp://61.220.23.239/rv-12/vcu-install/script.conf
     ```
 - `imgui.ini` for `vcu-install` window setting (not necessary)
     ```bash
-    wget -O imgui.ini ftp://61.220.23.239/rv-11/vcu-install/imgui.ini
+    wget -O imgui.ini ftp://61.220.23.239/rv-12/vcu-install/imgui.ini
     ```
 
 ## Usage
